@@ -1,5 +1,27 @@
 본 문서는 물리적으로 분리된 두 기기(집의 데스크톱 PC와 공유오피스의 노트북)를 가상 사설망(Tailscale VPN)으로 결합하여 구동하는 '100% 오픈소스 기반 이커머스 실시간 주문 및 재고 변동 파이프라인'의 최종 마스터 명세서입니다. AI 에이전트가 코드를 생성하고 인프라를 빌드할 때 지켜야 할 절대적인 그라운드 트루스(Ground Truth) 자산입니다.
 
+---
+
+## 📌 목차 (Table of Contents)
+1. [1. 프로젝트 개요 및 분산 아키텍처 (Architecture Overview)](#1-프로젝트-개요-및-분산-아키텍처-architecture-overview)
+2. [2. 노드별 상세 기술 스펙 (Node Specifications)](#2-노드별-상세-기술-스펙-node-specifications)
+3. [3. 데이터 컨트랙트 및 스키마 정의 (Data Contracts)](#3-데이터-컨트랙트-및-스키마-정의-data-contracts)
+4. [4. 메달리온 아키텍처(Medallion Architecture) 표준](#4-메달리온-아키텍처medallion-architecture-표준)
+5. [5. ClickHouse 특화 dbt 모범사례](#5-clickhouse-특화-dbt-모범사례)
+6. [6. PostgreSQL 원천 DB 상세 및 CDC DDL (Source DB)](#6-postgresql-원천-db-상세-및-cdc-ddl-source-db)
+7. [7. Kafka & Debezium CDC 스트리밍 설정 (Data Pipeline)](#7-kafka--debezium-cdc-스트리밍-설정-data-pipeline)
+8. [8. ClickHouse 실시간 CDC 테이블 상세 (Target DW)](#8-clickhouse-실시간-cdc-테이블-상세-target-dw)
+9. [9. Airflow 오케스트레이션 및 배치 파이프라인 (Batch Workflow)](#9-airflow-오케스트레이션-및-배치-파이프라인-batch-workflow)
+10. [10. dbt Analytics Engineering 개발 표준 가이드 (AI Agent 행동 지침)](#10-dbt-analytics-engineering-개발-표준-가이드-ai-agent-행동-지침)
+11. [11. 데이터 카탈로그 및 AI 에이전트 질의 최적화 표준](#11-데이터-카탈로그-및-ai-에이전트-질의-최적화-표준)
+    - [11.1 시맨틱 레이어 정의 (Data Dictionary & Relationships)](#111-시맨틱-레이어-정의-data-dictionary--relationships)
+    - [11.2 DB 레벨 메타데이터 영구 주입 (Database Comments Sync)](#112-db-레벨-메타데이터-영구-주입-database-comments-sync)
+    - [11.3 ClickHouse ReplacingMergeTree FINAL 조회 표준](#113-clickhouse-replacingmergetree-final-조회-표준)
+    - [11.4 레이어별 물리 데이터베이스 격리 표준 (ClickHouse 2계층 대응)](#114-레이어별-물리-데이터베이스-격리-표준-clickhouse-2계층-대응)
+    - [11.5 도메인 기반 dbt 모델 디렉토리 설계 표준](#115-도메인-기반-dbt-모델-디렉토리-설계-표준)
+
+---
+
 1. 프로젝트 개요 및 분산 아키텍처 (Architecture Overview)
 본 프로젝트는 클라우드 관리형 서비스 비용을 $0로 통제하면서도 프로덕션 수준의 분산 환경을 모방하기 위해 물리 2노드 하이브리드 아키텍처를 채택합니다. 두 기기는 인터넷망 기반의 Tailscale Mesh VPN Overlay Network를 통해 하나의 가상 LAN 대역(100.X.X.X)으로 묶여 통신합니다.
 
