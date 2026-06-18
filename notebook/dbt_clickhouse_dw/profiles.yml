@@ -1,0 +1,12 @@
+clickhouse_dw:
+  target: dev
+  outputs:
+    dev:
+      type: clickhouse
+      host: "{{ env_var('CLICKHOUSE_HOST', 'localhost') }}"
+      port: 8123
+      user: default
+      password: ""
+      schema: default
+      secure: false
+      connect_timeout: 10

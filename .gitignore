@@ -1,0 +1,31 @@
+# Python 관련 캐시 파일 무시
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# 개발 환경 변수 및 로컬 전용 설정 무시
+.env
+.env.local
+*.local
+docker-compose-infra.override.yaml
+
+# dbt 빌드 및 런타임 결과물 무시
+notebook/dbt_clickhouse_dw/target/
+notebook/dbt_clickhouse_dw/dbt_packages/
+notebook/dbt_clickhouse_dw/logs/
+
+# IDE 및 OS 시스템 파일 무시
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+.DS_Store
+Thumbs.db

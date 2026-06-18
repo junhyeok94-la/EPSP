@@ -1,0 +1,94 @@
+version: '3.8'
+
+networks:
+  ecommerce-data-network:
+    driver: bridge
+    name: ecommerce-data-network
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: ecommerce-postgres
+    environment:
+      POSTGRES_DB: ecommerce
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres-init/init.sql:/docker-entrypoint-initdb.d/init.sql
+    command: postgres -c wal_level=logical
+    networks:
+      - ecommerce-data-network
+    restart: always
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: ecommerce-kafka
+    ports:
+      - "9092:9092"
+      - "9094:9094"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:9093'
+      KAFKA_LISTENERS: 'INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:9094,CONTROLLER://0.0.0.0:9093'
+      KAFKA_ADVERTISED_LISTENERS: 'INTERNAL://kafka:9092,EXTERNAL://${TAILSCALE_DESKTOP_IP:-localhost}:9094'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'INTERNAL'
+      KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_HEAP_OPTS: '-Xms512m -Xmx512m'
+    networks:
+      - ecommerce-data-network
+    restart: always
+
+  connect:
+    build:
+      context: ./kafka-connect
+      dockerfile: Dockerfile
+    container_name: ecommerce-connect
+    depends_on:
+      - kafka
+      - postgres
+    ports:
+      - "8083:8083"
+    environment:
+      BOOTSTRAP_SERVERS: 'kafka:9092'
+      GROUP_ID: 'ecommerce-connect-group'
+      CONFIG_STORAGE_TOPIC: 'ecommerce_connect_configs'
+      OFFSET_STORAGE_TOPIC: 'ecommerce_connect_offsets'
+      STATUS_STORAGE_TOPIC: 'ecommerce_connect_statuses'
+      CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      STATUS_STORAGE_REPLICATION_FACTOR: 1
+      KEY_CONVERTER: 'org.apache.kafka.connect.json.JsonConverter'
+      VALUE_CONVERTER: 'org.apache.kafka.connect.json.JsonConverter'
+      CONNECT_KEY_CONVERTER_SCHEMAS_ENABLE: 'false'
+      CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: 'false'
+      ES_JAVA_OPTS: '-Xms512m -Xmx512m'
+    networks:
+      - ecommerce-data-network
+    restart: always
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:23.8
+    container_name: ecommerce-clickhouse
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    environment:
+      CLICKHOUSE_DB: default
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    networks:
+      - ecommerce-data-network
+    restart: always
+
+volumes:
+  postgres_data:
+  clickhouse_data:

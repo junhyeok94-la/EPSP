@@ -1,0 +1,3 @@
+[submodule "notebook/airflow_3_2"]
+	path = notebook/airflow_3_2
+	url = git@github.com:junhyeok94-la/airflow-3.2.2_local_sandbox.git

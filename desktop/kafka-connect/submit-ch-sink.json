@@ -1,0 +1,24 @@
+{
+  "name": "clickhouse-sink-connector",
+  "config": {
+    "connector.class": "com.clickhouse.kafka.connect.ClickHouseSinkConnector",
+    "tasks.max": "1",
+    "topics": "ecommerce.public.orders,ecommerce.public.products",
+    "clickhouse.host": "clickhouse",
+    "clickhouse.port": "8123",
+    "clickhouse.database": "default",
+    "clickhouse.username": "default",
+    "clickhouse.password": "",
+    "ssl": "false",
+    
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": "false",
+    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "key.converter.schemas.enable": "false",
+    
+    "transforms": "route",
+    "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
+    "transforms.route.regex": "ecommerce\\.public\\.(.*)",
+    "transforms.route.replacement": "stg_$1"
+  }
+}
