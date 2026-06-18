@@ -178,3 +178,74 @@ pageReporting=true
 - **memory=6GB**: WSL 가상 머신에 할당할 최대 메모리 크기입니다. Airflow 및 로컬 테스트 수행 시 호스트 OS(Windows)의 메모리 고갈을 막기 위한 최적 타협선입니다.
 - **processors=4**: 가상 머신이 사용할 최대 논리 프로세서(CPU Core) 개수입니다.
 - **pageReporting=true**: WSL2 가상 머신 내부에서 더 이상 사용하지 않는 메모리를 호스트 Windows OS에 실시간으로 반환하도록 유도하여 메모리 누수를 경감시킵니다.
+
+9. Airflow 3.2+ 개발 표준 가이드 (AI Agent 행동 지침)
+
+본 가이드는 Airflow 3.0+ (AIP-72) 및 Task SDK 아키텍처에 맞추어 DAG를 작성할 때 에이전트 및 개발자가 반드시 준수해야 하는 최신 표준 그라운드 룰입니다.
+
+### 9.1 핵심 개발 그라운드 룰 (Core Ground Rules)
+
+1. **Task SDK 공식 네임스페이스 (`airflow.sdk`) 사용 의무화**
+   - 기존 Airflow 2.x의 내부 모듈 임포트(예: `airflow.models.dag.DAG`, `airflow.decorators.task`)는 더 이상 사용하지 않습니다.
+   - 모든 DAG 구성 요소 및 유틸리티는 `from airflow.sdk import ...` 경로로 통일합니다.
+     - *대표 Import 대상*: `dag`, `task`, `Asset`, `Connection`, `Variable`, `get_current_context`
+
+2. **메타데이터 DB 직접 접근 엄격 금지 (Execution API 강제)**
+   - 워커의 태스크 코드 내에서 메타데이터 데이터베이스에 직접 커넥션을 맺거나 내부 모델(예: `DagRun`, `TaskInstance`)을 직접 임포트해 쿼리할 수 없습니다.
+   - 데이터베이스와의 통신은 에어플로우 내부 REST API 및 Execution API를 거쳐야 하므로, 태스크 상태나 콘텍스트 정보 조회 시에는 반드시 `get_current_context()` 메소드를 통해 접근하십시오.
+
+3. **태그(Tags) 메타데이터 강제화**
+   - Airflow 3.x부터는 UI 및 오케스트레이션 관리 목적의 태깅이 표준화되어 권장됩니다.
+   - 모든 DAG 선언부(`@dag` 데코레이터)에는 시스템 분류를 명시하는 `tags` 파라미터를 필수로 작성해야 합니다. (예: `tags=["ecommerce", "cdc", "clickhouse"]`)
+
+4. **TaskFlow API 및 데코레이터 우선 표준**
+   - 전통적인 Operator 클래스를 명시적으로 선언하여 연결하는 방식(예: `PythonOperator`) 대신, 가독성과 데이터 흐름 추적이 용이한 `@dag`, `@task`, `@task_group` 데코레이터를 이용한 TaskFlow API 작성을 기본 원칙으로 합니다.
+
+5. **Asset(구 Dataset) 기반 스케줄링 적용**
+   - 2.x 버전에서 사용되던 `Dataset` 명칭은 3.x 버전부터 `Asset`으로 일괄 개편되었습니다.
+   - 스케줄링 간 이벤트 기반 연쇄 흐름을 설계할 때는 `from airflow.sdk import Asset`을 선언하여 데이터 의존성 체인을 구성하십시오.
+
+---
+
+### 9.2 Airflow 3.2+ 표준 코딩 모범 사례 (Best Practice)
+
+```python
+from datetime import datetime
+from airflow.sdk import dag, task, Asset, get_current_context
+
+# 1. 3.x 규격의 Asset 정의 (일관된 URI 스키마 사용)
+CLICKHOUSE_MART_ASSET = Asset(uri="clickhouse://default/fact_orders_hourly")
+
+# 2. dag 데코레이터 및 필수 태깅(tags) 적용
+@dag(
+    dag_id="ecommerce_3x_pipeline",
+    start_date=datetime(2026, 1, 1),
+    schedule="*/15 * * * *",  # 15분 마이크로 배치
+    catchup=False,
+    tags=["ecommerce", "dbt", "dw"]  # 3.x 필수 권장 태깅
+)
+def my_pipeline():
+
+    # 3. TaskFlow API 활용 및 return을 통한 XCom 데이터 연계
+    @task(task_id="extract_postgres_watermark")
+    def get_watermark():
+        # 4. get_current_context()를 통한 안전한 콘텍스트 접근 (DB 직접 쿼리 절대 금지)
+        context = get_current_context()
+        ti = context["ti"]
+        logical_date = context["logical_date"]
+        
+        print(f"Executing Task: {ti.task_id} for logical date: {logical_date}")
+        return logical_date.strftime("%Y-%m-%d %H:%M:%S")
+
+    @task(task_id="trigger_dbt_marts", outlets=[CLICKHOUSE_MART_ASSET])
+    def run_marts(watermark_time):
+        print(f"Running dbt marts with watermark: {watermark_time}")
+        # ClickHouse OLAP 쿼리 및 dbt 변환 가공 로직 수행...
+        return "SUCCESS"
+
+    # Task 간 의존성 연결
+    watermark = get_watermark()
+    run_marts(watermark)
+
+my_pipeline()
+```
