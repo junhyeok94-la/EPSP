@@ -2,27 +2,10 @@ version: '3.8'
 
 networks:
   ecommerce-data-network:
-    driver: bridge
+    external: true
     name: ecommerce-data-network
 
 services:
-  postgres:
-    image: postgres:15-alpine
-    container_name: ecommerce-postgres
-    environment:
-      POSTGRES_DB: ecommerce
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    ports:
-      - "5433:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./postgres-init/init.sql:/docker-entrypoint-initdb.d/init.sql
-    command: postgres -c wal_level=logical
-    networks:
-      - ecommerce-data-network
-    restart: always
-
   kafka:
     image: confluentinc/cp-kafka:7.4.0
     container_name: ecommerce-kafka
@@ -43,6 +26,7 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_HEAP_OPTS: '-Xms512m -Xmx512m'
+      CLUSTER_ID: '4L62C3q8QO69I3edzZb0Q'
     networks:
       - ecommerce-data-network
     restart: always
@@ -54,7 +38,6 @@ services:
     container_name: ecommerce-connect
     depends_on:
       - kafka
-      - postgres
     ports:
       - "8083:8083"
     environment:
@@ -85,10 +68,10 @@ services:
       CLICKHOUSE_DB: default
     volumes:
       - clickhouse_data:/var/lib/clickhouse
+      - ./clickhouse-init/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     networks:
       - ecommerce-data-network
     restart: always
 
 volumes:
-  postgres_data:
   clickhouse_data:

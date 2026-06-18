@@ -1,0 +1,8 @@
+version: 2
+
+sources:
+  - name: clickhouse
+    schema: default
+    tables:
+      - name: stg_orders
+      - name: stg_products

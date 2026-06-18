@@ -26,7 +26,11 @@ Orchestration & Ingestion 레이어               Data Infrastructure 레이어 
 
 2. 노드별 상세 기술 스펙 (Node Specifications)
 2.1 [노드 1] 데스크톱 PC: 데이터 인프라 엔진
-데스크톱은 데이터의 영속성 저장과 고속 스트리밍 처리를 전담합니다. Docker 내부의 공유 브리지 네트워크 ecommerce-data-network를 기반으로 모든 인프라가 연동됩니다.
+데스크톱은 데이터의 영속성 저장과 고속 스트리밍 처리를 전담합니다. 역할 분리를 명확히 하기 위해 인프라 스택은 다음 두 개의 컴포즈로 격리되어 독립 구동됩니다.
+- source-db: PostgreSQL 15 원천 DB 전용 스택 (도메인 1)
+- data-pipeline: Apache Kafka, Debezium Connect, ClickHouse DW 전용 스택 (데이터 플랫폼)
+
+두 스택은 도커 호스트 상의 공유 외부 브리지 네트워크(ecommerce-data-network)를 통해 컨테이너 이름(DNS)으로 투명하게 통신합니다.
 
 원천 DB (PostgreSQL 15-alpine): wal_level = logical 설정을 적용하여 실시간 CDC의 원천 로그(WAL)를 생성합니다. Airflow 메타 DB와의 포트 충돌을 피하기 위해 외부 호스트 포트는 5433으로 포워딩합니다.
 
@@ -92,7 +96,7 @@ AI 에이전트는 코드를 구현할 때 아래 기술적 거버넌스 지침 
     stg_orders 테이블은 인입 시점 기준 7일이 지나면 자동으로 폐기되도록 ClickHouse 내장 TTL 문법을 
     의무 적용합니다.
     
-    ALTER TABLE default.stg_orders MODIFY TTL ts_ms + INTERVAL 7 DAY;
+    ALTER TABLE default.stg_orders MODIFY TTL toDateTime(ts_ms) + INTERVAL 7 DAY;
 
     2. 데이터 보안 및 가명화 (Masking): 민감 정보인 고유 사용자 식별자(user_id)는 dbt staging 모델 
     연산 과정에서 외부 유출을 차단하기 위해 고유 솔트(Salt) 값을 결합한 SHA-256 단방향 해시 
@@ -130,15 +134,18 @@ with DAG(dag_id="reactive_stock_alert_pipeline", schedule=[CLICKHOUSE_ORDER_MART
 6. 리포지토리 디렉토리 레이아웃 가이드
 
 ├── desktop/                         # [노드 1 데스크톱] 전용 인프라 컴포넌트
-│   ├── docker-compose-infra.yaml   # 전용 인프라 컴포즈 (Postgres, Kafka, Connect, ClickHouse)
-│   ├── clickhouse-init/
-│   │   └── init-db.sql
-│   ├── postgres-init/
-│   │   └── init.sql
-│   └── kafka-connect/
-│       ├── Dockerfile
-│       ├── submit-pg-source.json   # Debezium Postgres CDC 연결 설정서
-│       └── submit-ch-sink.json     # ClickHouse Sink 커넥터 연결 설정서
+│   ├── source-db/                   # [도메인 1] 원천 데이터베이스 영역
+│   │   ├── docker-compose-db.yaml   # Postgres 단독 컴포즈
+│   │   └── postgres-init/
+│   │       └── init.sql             # Postgres 초기화 DDL 및 REPLICA IDENTITY 설정
+│   └── data-pipeline/               # [데이터 플랫폼] 스트리밍 및 ClickHouse DW 영역
+│       ├── docker-compose-pipeline.yaml # Kafka, Connect, ClickHouse 통합 컴포즈
+│       ├── clickhouse-init/
+│       │   └── init-db.sql          # ClickHouse 초기 ReplacingMergeTree DDL 및 TTL 설정
+│       └── kafka-connect/
+│           ├── Dockerfile           # Debezium + ClickHouse 어댑터 커스텀 이미지 빌드 파일
+│           ├── submit-pg-source.json # Debezium PostgreSQL Source 커넥터 설정서
+│           └── submit-ch-sink.json   # ClickHouse Sink 커넥터 설정서
 └── notebook/                        # [노드 2 노트북] 오케스트레이션 및 데이터 인입 컴포넌트
     ├── data-generator/
     │   └── transaction_generator.py # 트래픽 유발 파이썬 엔진 (Tailscale IP 주입)
@@ -147,7 +154,12 @@ with DAG(dag_id="reactive_stock_alert_pipeline", schedule=[CLICKHOUSE_ORDER_MART
     │   ├── profiles.yml
     │   └── models/
     │       ├── staging/            # user_id SHA-256 마스킹 및 op 파싱
+    │       │   ├── sources.yml
+    │       │   ├── stg_orders.sql
+    │       │   └── stg_products.sql
     │       └── marts/              # ReplacingMergeTree 기반 FINAL 문법 및 증분 마트 모델
+    │           ├── fact_orders_hourly.sql
+    │           └── dim_products.sql
     └── airflow_3_2/                 # Airflow 3.2.2 샌드박스
         ├── docker-compose.yaml
         └── dags/
@@ -249,3 +261,16 @@ def my_pipeline():
 
 my_pipeline()
 ```
+
+### 9.3 공통 로직 캡슐화 및 결합도 제어 가이드 (Plugins & Coupling Guide)
+
+1. **공통 로직의 `plugins` 관리 원칙**
+   - DAG 간에 재사용되는 공통 기능(예: 알림 유틸리티, 공통 DB API 래퍼, 특정 데이터 정제 모듈 등)은 `notebook/airflow_3_2/plugins` 디렉토리 하위에 모듈/패키지 형태로 작성하여 관리합니다.
+   - 플러그인에 정의된 모듈은 Airflow 3.x 환경에서 임포트할 때 표준 파이썬 경로로 접근이 가능하며, 구조화된 네임스페이스를 준수해야 합니다.
+   - **캡슐화(Encapsulation)**를 통해 공통 함수의 내부 세부 구현(예: 구체적인 SQL 연결 파라미터나 API endpoint 호출 구조)을 숨기고, DAG 비즈니스 로직에는 간결한 인터페이스만 노출시켜 재사용성과 가독성을 극대화합니다.
+
+2. **강결합 방지를 위한 유연성 대처 원칙 (Loose Coupling)**
+   - **강결합(Tight Coupling) 리스크 방지**: 만약 공통 로직이 특정 DAG의 비즈니스 도메인(예: 복잡한 쿼리 스키마 변형, 특정 로직 전용 예외 처리 등)과 밀접하게 연동된다면, 이를 무리하게 공통화하여 플러그인에 캡슐화하는 것은 피해야 합니다. 이는 해당 모듈을 참조하는 다른 DAG들의 동시 변경을 강제(사이드 이펙트 유발)하기 때문입니다.
+   - **유연한 대처 규칙**:
+     - *도메인 특화 쿼리 및 변환 로직*: 개별 DAG 또는 태스크 내부에 직접 인라인(Inline)으로 작성하거나, 해당 DAG 파일이 속한 로컬 디렉토리 내부에서만 사용될 헬퍼 모듈로 격리하여 결합을 차단합니다.
+     - *의존성 주입(Dependency Injection) 지향*: 공통 코드가 필요하지만 특정 비즈니스 파라미터나 쿼리가 달라져야 하는 경우, 로직 내에 하드코딩하지 않고 매개변수(Parameter)나 콜백 함수(Callback) 형태로 외부에서 주입받도록 구성하여 결합도를 낮춥니다.

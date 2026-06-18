@@ -12,8 +12,8 @@ CREATE TABLE IF NOT EXISTS default.stg_orders (
 PRIMARY KEY order_id 
 ORDER BY order_id;
 
--- 7일 TTL 설정
-ALTER TABLE default.stg_orders MODIFY TTL ts_ms + INTERVAL 7 DAY;
+-- 7일 TTL 설정 (toDateTime 형변환 적용)
+ALTER TABLE default.stg_orders MODIFY TTL toDateTime(ts_ms) + INTERVAL 7 DAY;
 
 -- 2. 상품 스테이징 테이블 생성 (ReplacingMergeTree)
 CREATE TABLE IF NOT EXISTS default.stg_products (
@@ -27,5 +27,5 @@ CREATE TABLE IF NOT EXISTS default.stg_products (
 PRIMARY KEY product_id
 ORDER BY product_id;
 
--- 7일 TTL 설정
-ALTER TABLE default.stg_products MODIFY TTL ts_ms + INTERVAL 7 DAY;
+-- 7일 TTL 설정 (toDateTime 형변환 적용)
+ALTER TABLE default.stg_products MODIFY TTL toDateTime(ts_ms) + INTERVAL 7 DAY;
