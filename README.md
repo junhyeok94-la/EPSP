@@ -66,36 +66,63 @@ Orchestration & Ingestion 레이어               Data Infrastructure 레이어 
 
 ---
 
-## 3. 리포지토리 디렉토리 레이아웃
+## 3. 리포지토리 디렉토리 레이아웃 (Repository Layout)
 
 ```text
-├── desktop/                         # [노드 1 데스크톱] 전용 데이터 인프라 엔진
-│   ├── docker-compose-infra.yaml   # Postgres, Kafka, Connect, ClickHouse 컨테이너 스택
-│   ├── clickhouse-init/            # ClickHouse 초기 ReplacingMergeTree 테이블 생성 DDL
-│   │   └── init-db.sql
-│   ├── postgres-init/              # 원천 DB 테이블 생성 및 WAL 설정
-│   │   └── init.sql
-│   └── kafka-connect/              # Debezium Connect 빌드 및 Source/Sink 커넥터 설정
-│       ├── Dockerfile
-│       ├── submit-pg-source.json   
-│       └── submit-ch-sink.json     
-└── notebook/                        # [노드 2 노트북] 오케스트레이션 및 데이터 인입
-    ├── data-generator/              # 트랜잭션 시뮬레이션 파이썬 엔진 (Resilient Connection)
+├── desktop/                         # [노드 1 데스크톱] 전용 인프라 컴포넌트
+│   ├── source-db/                   # [도메인 1] 원천 데이터베이스 영역
+│   │   ├── docker-compose-db.yaml   # Postgres 단독 컴포즈
+│   │   └── postgres-init/
+│   │       └── init.sql             # Postgres DDL 및 REPLICA IDENTITY 설정
+│   └── data-pipeline/               # [데이터 플랫폼] 스트리밍 및 ClickHouse DW 영역
+│       ├── docker-compose-pipeline.yaml # Kafka, Connect, ClickHouse 통합 컴포즈
+│       ├── clickhouse-init/
+│       │   └── init-db.sql          # ClickHouse ReplacingMergeTree DDL 및 TTL 설정
+│       └── kafka-connect/
+│           ├── Dockerfile           # Debezium + ClickHouse 어댑터 커스텀 이미지 빌드
+│           ├── submit-pg-source-v2.json # Debezium PostgreSQL Source 커넥터 설정서
+│           └── submit-ch-sink-v2.json   # ClickHouse Sink 커넥터 설정서
+└── notebook/                        # [노드 2 노트북] 오케스트레이션 및 데이터 인입 컴포넌트
+    ├── DATA_CATALOG.md              # [AI 에이전트용] 마스터 데이터 카탈로그 및 Few-Shot SQL 가이드
+    ├── data-generator/              # 트래픽 유발 파이썬 엔진
     │   └── transaction_generator.py 
-    ├── dbt_clickhouse_dw/           # ClickHouse 전용 dbt 데이터 마트 모델링 프로젝트
-    │   ├── dbt_project.yml
-    │   ├── profiles.yml
-    │   └── models/                  # 01_bronze(원천 수집), 02_silver(정제 및 Dim/Fact), 03_gold(마트 집계)
-    └── airflow_3_2/                 # [Submodule] Airflow 3.2.2 샌드박스 및 오케스트레이션 DAG
+    ├── kaggle_data/                 # Kaggle Ecommerce DW 원천 데이터 및 전처리 스크립트
+    │   └── preprocess_kaggle_data.py
+    ├── dbt_clickhouse_dw/           # ClickHouse 전용 dbt 변환 가공 프로젝트
+    │   ├── dbt_project.yml          # persist_docs 설정 포함
+    │   ├── profiles.yml             # analytics 스키마 격리 적용
+    │   └── models/
+    │       ├── 01_bronze/           # 원천 1:1 매핑 및 마스킹/파싱 계층 (Bronze Layer)
+    │       │   └── ecommerce/       # toDate 날짜 변환 및 SHA256 개인정보 가명화 뷰 정의
+    │       ├── 02_silver/           # 비즈니스 정규화ReplacingMergeTree 계층 (Silver Layer)
+    │       │   └── schema.yml       # DB 컬럼 코멘트 영구 동기화용 메타데이터 사전
+    │       └── 03_gold/             # BI 시각화 및 집계용 (OBT) 계층 (Gold Layer)
+    │           └── executive/       # mart_sales_summary (One Big Table) 매출 분석 마트
+    └── airflow_3_2/                 # Airflow 3.2.2 샌드박스
         ├── docker-compose.yaml
         └── dags/
-            ├── local_ecommerce_pipeline.py  # 15분 주기 마이크로 배치 및 Asset 체인 DAG
-            └── data_reconciliation_audit.py # Postgres vs ClickHouse 일일 정합성 검증 DAG
+            ├── local_ecommerce_pipeline.py  # 15분 크론 / Asset 연쇄 체인 메인 DAG
+            └── data_reconciliation_audit.py # Postgres vs ClickHouse 데이터 원장 정합성 검증 DAG
 ```
 
 ---
 
-## 4. 시작 가이드 (Quick Start)
+## 4. AI 에이전트 질의 최적화 & 데이터 카탈로그 표준
+
+본 프로젝트는 향후 LLM 기반 AI 에이전트가 자연어로 데이터베이스에 질의하고 정확하게 조인을 수행하여 데이터를 추출할 수 있도록 강력한 데이터 시맨틱 표준을 확립했습니다.
+
+1. **DB 레벨 메타데이터 영구 주입 (`persist_docs`)**:
+   - `models/02_silver/schema.yml`에 한글 칼럼 설명과 관계 사전을 SSOT(단일 진실 공급원)으로 통합 관리합니다.
+   - dbt 빌드 시 ClickHouse의 `system.columns` 코멘트 메타데이터에 이 설명들이 영구적으로 자동 동기화 주입되도록 구현하여, AI 에이전트가 DB 연결 즉시 풍부한 한글 컬럼 사전을 참조하도록 구성했습니다.
+2. **가명화 컬럼 조인성 보장**:
+   - 개인정보 식별자인 `customer_id`는 전 계층에서 동일한 Salt 알고리즘과 대문자 **`SHA256`** 함수를 결합해 가명화 처리하여, 암호화 상태에서도 실버/골드 계층 간의 정확한 조인(`JOIN`)을 지원합니다.
+3. **ClickHouse FINAL 조회 구문 우회 표준**:
+   - ReplacingMergeTree 테이블의 비동기 병합 문제를 해소하기 위해 **`(SELECT * FROM table FINAL) as alias`** 서브쿼리 구조로 SQL을 최적화하여 구문 오류(Missing Columns) 및 파싱 복잡성을 차단했습니다.
+- AI 에이전트 상세 가이드 및 Few-Shot SQL: [DATA_CATALOG.md](file:///d:/01.DEV/EPSP/notebook/DATA_CATALOG.md) 참조
+
+---
+
+## 5. 시작 가이드 (Quick Start)
 
 ### 🛠️ 전제 조건 (WSL2 리소스 제한 설정)
 Windows 호스트 환경(특히 노트북 노드)에서 Docker Desktop 및 WSL2를 구동할 때, 가상 메모리 프로세스(`vmmemWSL`)의 과도한 리소스 점유와 시스템 프리징을 방지하기 위해 사용자 프로필 경로(`%USERPROFILE%`)에 `.wslconfig` 설정을 강제 설정할 것을 권장합니다.
