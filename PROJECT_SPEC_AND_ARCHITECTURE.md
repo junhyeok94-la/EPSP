@@ -54,6 +54,15 @@ Orchestration & Ingestion 레이어               Data Infrastructure 레이어 
 3. 데이터 컨트랙트 및 스키마 정의 (Data Contracts)
 3.1 원천 운영 DB (PostgreSQL DDL)
 
+CREATE TABLE users (
+    user_id VARCHAR(50) PRIMARY KEY,
+    age_group VARCHAR(20),
+    gender VARCHAR(10),
+    location VARCHAR(100),
+    membership_tier VARCHAR(20),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE products (
     product_id VARCHAR(50) PRIMARY KEY,
     product_name VARCHAR(100) NOT NULL,
@@ -64,7 +73,7 @@ CREATE TABLE products (
 
 CREATE TABLE orders (
     order_id VARCHAR(50) PRIMARY KEY,
-    user_id VARCHAR(50) NOT NULL,
+    user_id VARCHAR(50) REFERENCES users(user_id),
     product_id VARCHAR(50) REFERENCES products(product_id),
     quantity INT NOT NULL,
     total_price DECIMAL(12, 2) NOT NULL,
@@ -72,6 +81,18 @@ CREATE TABLE orders (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE payments (
+    payment_id VARCHAR(50) PRIMARY KEY,
+    order_id VARCHAR(50) REFERENCES orders(order_id),
+    payment_method VARCHAR(50) NOT NULL, -- 'CREDIT_CARD', 'POINT', 'BANK_TRANSFER'
+    amount DECIMAL(12, 2) NOT NULL,
+    status VARCHAR(20) NOT NULL, -- 'SUCCESS', 'FAILED', 'REFUNDED'
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 행동 로그 (Clickstream)는 Postgres를 거치지 않고 Python 생성기에서 Kafka로 직결 송출합니다.
+-- 이벤트 구조: event_id, user_id, session_id, event_type(page_view, add_to_cart, checkout, purchase), product_id, event_time
 
 3.2 DW 스테이징 DB (ClickHouse ReplacingMergeTree DDL)
 Debezium CDC 특성상 무수히 발생하는 중복 변경 로그(op = c, u)를 수용하고 자동 최신화하기 위해 동일 PK 기준 최신 타임스탬프(ts_ms)만 백그라운드에서 병합하도록 설정합니다.
@@ -153,13 +174,27 @@ with DAG(dag_id="reactive_stock_alert_pipeline", schedule=[CLICKHOUSE_ORDER_MART
     │   ├── dbt_project.yml
     │   ├── profiles.yml
     │   └── models/
-    │       ├── staging/            # user_id SHA-256 마스킹 및 op 파싱
-    │       │   ├── sources.yml
-    │       │   ├── stg_orders.sql
-    │       │   └── stg_products.sql
-    │       └── marts/              # ReplacingMergeTree 기반 FINAL 문법 및 증분 마트 모델
-    │           ├── fact_orders_hourly.sql
-    │           └── dim_products.sql
+    │       ├── staging/             # 원천 1:1 매핑 및 마스킹/파싱 계층
+    │       │   ├── ecommerce/       # Postgres 기반 CDC 도메인
+    │       │   │   ├── sources.yml
+    │       │   │   ├── stg_orders.sql
+    │       │   │   ├── stg_products.sql
+    │       │   │   ├── stg_users.sql
+    │       │   │   └── stg_payments.sql
+    │       │   └── clickstream/     # 행동 로그 도메인
+    │       │       └── stg_events.sql
+    │       ├── core/                # 비즈니스 정규화 (Dim/Fact) 계층
+    │       │   ├── users/
+    │       │   │   └── dim_users.sql
+    │       │   ├── products/
+    │       │   │   └── dim_products.sql
+    │       │   └── sales/
+    │       │       └── fact_sales.sql
+    │       └── marts/               # BI 시각화 및 집계용 (OBT/MV) 계층
+    │           ├── marketing/
+    │           │   └── mart_user_retention.sql
+    │           └── executive/
+    │               └── mart_daily_sales_wide.sql
     └── airflow_3_2/                 # Airflow 3.2.2 샌드박스
         ├── docker-compose.yaml
         └── dags/
@@ -273,4 +308,53 @@ my_pipeline()
    - **강결합(Tight Coupling) 리스크 방지**: 만약 공통 로직이 특정 DAG의 비즈니스 도메인(예: 복잡한 쿼리 스키마 변형, 특정 로직 전용 예외 처리 등)과 밀접하게 연동된다면, 이를 무리하게 공통화하여 플러그인에 캡슐화하는 것은 피해야 합니다. 이는 해당 모듈을 참조하는 다른 DAG들의 동시 변경을 강제(사이드 이펙트 유발)하기 때문입니다.
    - **유연한 대처 규칙**:
      - *도메인 특화 쿼리 및 변환 로직*: 개별 DAG 또는 태스크 내부에 직접 인라인(Inline)으로 작성하거나, 해당 DAG 파일이 속한 로컬 디렉토리 내부에서만 사용될 헬퍼 모듈로 격리하여 결합을 차단합니다.
-     - *의존성 주입(Dependency Injection) 지향*: 공통 코드가 필요하지만 특정 비즈니스 파라미터나 쿼리가 달라져야 하는 경우, 로직 내에 하드코딩하지 않고 매개변수(Parameter)나 콜백 함수(Callback) 형태로 외부에서 주입받도록 구성하여 결합도를 낮춥니다.
+     - *의존성 주입(Dependency Injection) 지향*: 공통 코드가 필요하지만 특정 비즈니스 파라미터나 쿼리가 달라져야 하는 경우, 로직 내에 하드코딩하지 않고 매개변수(Parameter)나 콜백 함수(Callback) 형태로 외부에서 주입받도록 구성하여 결합도를 낮춥니다.
+
+10. dbt Analytics Engineering 개발 표준 가이드 (AI Agent 행동 지침)
+
+본 프로젝트에서는 복잡한 DW 환경에서 일관성을 유지하기 위해 `STG -> Core(Dim/Fact) -> Mart` 구조의 모델링을 지향하며, 모든 dbt SQL 모델은 다음 표준을 엄격히 준수해야 합니다.
+
+1. **디렉토리 레이아웃 원칙**
+   - 모델 파일은 반드시 `models/[스키마명]/[업무도메인별]/[모델명].sql` 경로에 위치해야 합니다.
+   - 예: `models/staging/ecommerce/stg_orders.sql`, `models/core/users/dim_users.sql`
+
+2. **명명 규칙 (Naming Conventions)**
+   - 모델명은 반드시 생성되는 대상 테이블명과 1:1로 일치해야 합니다. (예: 파일명이 `stg_orders.sql`이면, 테이블명도 `stg_orders`여야 함)
+   - 소문자와 스네이크 케이스(snake_case)만 사용합니다.
+
+3. **코드 작성 구조 및 순서 원칙**
+   모든 dbt 모델의 내부 코드는 반드시 다음 순서대로 작성되어야 합니다.
+
+   - **[1] Header Comments (헤더 주석)**: 최상단에 모델의 명칭, 목적, 변경 이력을 표준 양식으로 작성.
+   - **[2] Hooks (훅 설정)**: 모델 실행 전후에 중복 체킹이나 로깅 등이 필요할 경우 `pre_hook`, `post_hook` 선언. (불필요한 경우 생략 가능하나 위치는 헤더 다음)
+   - **[3] Config (설정)**: ClickHouse 특성(`materialized`, `engine`, `order_by` 등)을 선언.
+   - **[4] SQL Query (본문)**: 비즈니스 로직 작성.
+
+   **[표준 템플릿 예시]**
+   ```sql
+   /*
+   =============================================================================
+   * 모델명      : 모델명_테이블명 (예: stg_orders)
+   * 모델 목적   : 이 모델이 하는 역할에 대한 간략한 설명
+   * 
+   * [수정 이력]
+   * - YYYY-MM-DD [작성자] : 최초 생성 및 내용 요약
+   * - YYYY-MM-DD [작성자] : 기능 추가 또는 리팩토링 내용
+   =============================================================================
+   */
+
+   -- [Pre/Post Hooks] (필요한 경우)
+   {{ config(
+       pre_hook="-- 사전 검증 로직이나 로깅을 여기에 작성"
+   ) }}
+
+   -- [Config]
+   {{ config(
+       materialized='view',
+       -- ClickHouse 전용 설정 등
+   ) }}
+
+   -- [SQL 본문]
+   select
+       ...
+   ```
