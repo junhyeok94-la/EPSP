@@ -26,7 +26,10 @@ models:
       columns: true
     "01_bronze":
       +materialized: view
+      +schema: bronze
     "02_silver":
       +materialized: table
+      +schema: silver
     "03_gold":
       +materialized: table
+      +schema: gold
