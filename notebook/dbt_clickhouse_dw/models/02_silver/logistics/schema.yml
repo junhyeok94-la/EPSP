@@ -1,0 +1,44 @@
+version: 2
+
+models:
+  - name: dim_fulfillment
+    description: "풀필먼트 물류 방식 및 SLA 보장 기준 차원 테이블입니다."
+    columns:
+      - name: fulfillment_id
+        description: "풀필먼트 고유 ID"
+      - name: shipping_method
+        description: "배송 방법 (예: Standard, Express, Next-day)"
+      - name: service_level
+        description: "서비스 수준 등급 (예: Economy, Premium)"
+      - name: delivery_sla_days
+        description: "SLA 보장 배송 기한 (일수)"
+      - name: base_shipping_cost
+        description: "기본 배송 요금"
+
+  - name: fact_fulfillment_performance
+    description: "배송 일자, 물류 수단, 기사, 지역별 배송 처리 실적 및 SLA 미준수율 집계 팩트 테이블입니다."
+    columns:
+      - name: date_id
+        description: "배송 일자 ID (dim_calendar와 조인 가능)"
+      - name: fulfillment_id
+        description: "물류 풀필먼트 ID (dim_fulfillment와 조인 가능)"
+      - name: location_id
+        description: "배송 지역 ID (dim_location과 조인 가능)"
+      - name: delivery_person_id
+        description: "담당 배송 기사 ID (dim_delivery_person과 조인 가능)"
+      - name: total_deliveries
+        description: "총 배송 의뢰 건수"
+      - name: completed_deliveries
+        description: "배송 완료 건수"
+      - name: returned_deliveries
+        description: "반품/회수 건수"
+      - name: avg_delivery_delay_days
+        description: "평균 배송 지연 일수"
+      - name: avg_delivery_rating
+        description: "평균 배송 만족도 평점"
+      - name: total_shipping_cost
+        description: "총 발생 배송 비용"
+      - name: sla_breach_rate
+        description: "SLA 납기 기한 위반 비율"
+      - name: return_rate
+        description: "회수/반품 발생 비율"

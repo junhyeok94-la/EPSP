@@ -1,0 +1,8 @@
+version: 2
+
+sources:
+  - name: clickhouse
+    schema: default
+    tables:
+      - name: stg_dim_product
+      - name: stg_products

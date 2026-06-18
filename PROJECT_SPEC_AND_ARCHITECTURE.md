@@ -448,4 +448,21 @@ ClickHouse는 PostgreSQL과 달리 `Database > Schema > Table`과 같은 3단계
 
 dbt 빌드 실행 시 `dbt_project.yml`의 `+schema` 설정을 통해 해당 데이터베이스들이 자동으로 구분되어 생성 및 배포되도록 구성해야 합니다.
 
+### 11.5 도메인 기반 dbt 모델 디렉토리 설계 표준
+dbt 모델 관리의 효율성 및 모듈화를 극대화하기 위해, 브론즈(Bronze), 실버(Silver), 골드(Gold) 각 레이어 하위의 폴더 구조를 개별 테이블명이 아닌 **비즈니스 도메인(Domain)** 기준으로 일관되게 구조화합니다.
+
+1. **표준 도메인 분류 기준**:
+   - **`common`**: 전사 공통 마스터 코드 및 기준 데이터 (예: `dim_calendar`, `dim_location`)
+   - **`customer`**: 고객 세그먼트, 프로필 및 활성 지표 데이터 (예: `dim_customer`, `fact_customer_rfm`)
+   - **`product`**: 상품 정보 및 카테고리/브랜드 표준 (예: `dim_product`)
+   - **`partner`**: 외부 연계 자원인 입점 셀러 및 소속 배송 기사 정보 (예: `dim_seller`, `dim_delivery_person`)
+   - **`marketing`**: 캠페인 예산, 유입 채널 정보 및 광고비 집행 성과 (예: `dim_campaign`, `dim_channel`, `fact_marketing_spend`)
+   - **`sales`**: 주문 거래, 반품/환불 상세 및 결제 수단 정보 (예: `fact_orders`, `fact_returns`, `dim_payment`)
+   - **`logistics`**: 풀필먼트 물류 방식 및 배송 실적/지연 지표 (예: `dim_fulfillment`, `fact_fulfillment_performance`)
+   - **`clickstream`**: 사용자 웹/앱 내 클릭 및 이벤트 활동 원시 로그
+
+2. **메타데이터 파일 모듈화 규칙**:
+   - `sources.yml` 및 `schema.yml` 등 dbt 설정 메타데이터 파일들은 단일 대형 파일로 병합하지 않고, 각 도메인 폴더 하위에 조각내어 **`sources.yml`** 및 **`schema.yml`**로 각각 관리하여 결합도를 낮추고 모듈 가독성을 확보합니다.
+
+
 

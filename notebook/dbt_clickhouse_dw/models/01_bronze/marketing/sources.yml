@@ -1,0 +1,9 @@
+version: 2
+
+sources:
+  - name: clickhouse
+    schema: default
+    tables:
+      - name: stg_dim_campaign
+      - name: stg_dim_channel
+      - name: stg_fact_marketing_spend

@@ -1,0 +1,56 @@
+version: 2
+
+models:
+  - name: dim_channel
+    description: "고객 유입 및 마케팅 채널 차원 테이블입니다."
+    columns:
+      - name: channel_id
+        description: "유입 채널 고유 ID"
+      - name: channel_name
+        description: "채널명 (예: Organic, Paid Search, Social 등)"
+      - name: channel_type
+        description: "채널 유형 (예: Digital, Offline)"
+      - name: description
+        description: "채널 상세 설명"
+
+  - name: dim_campaign
+    description: "마케팅 캠페인 마스터 차원 테이블입니다. 예산과 캠페인 유형 정보를 제공합니다."
+    columns:
+      - name: campaign_id
+        description: "캠페인 고유 ID"
+      - name: campaign_name
+        description: "캠페인 명칭"
+      - name: campaign_type
+        description: "캠페인 유형 (예: Awareness, Retention, Acquisition 등)"
+      - name: channel_id
+        description: "연계된 마케팅 채널 ID (dim_channel 테이블 참조)"
+      - name: start_date
+        description: "캠페인 시작일 (YYYY-MM-DD)"
+      - name: end_date
+        description: "캠페인 종료일 (YYYY-MM-DD)"
+      - name: budget
+        description: "캠페인 집행 예산"
+      - name: objective
+        description: "캠페인 목표 (예: Conversion, Engagement 등)"
+
+  - name: fact_marketing_spend
+    description: "일별, 캠페인별 마케팅 광고 집행 비용과 클릭수, 전환수 및 직결 매출 성과 팩트 테이블입니다."
+    columns:
+      - name: marketing_id
+        description: "마케팅 집행 고유 식별자"
+      - name: date_id
+        description: "광고 일자 ID (dim_calendar와 조인 가능)"
+      - name: campaign_id
+        description: "진행 캠페인 ID (dim_campaign과 조인 가능)"
+      - name: channel_id
+        description: "유입 채널 ID (dim_calendar와 조인 가능)"
+      - name: spend_amount
+        description: "광고비 집행 금액"
+      - name: impressions
+        description: "광고 노출 횟수"
+      - name: clicks
+        description: "광고 클릭수"
+      - name: conversions
+        description: "광고를 통한 구매 전환수"
+      - name: revenue_generated
+        description: "광고 직결 발생 매출액"

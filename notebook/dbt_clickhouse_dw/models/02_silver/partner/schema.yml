@@ -1,0 +1,40 @@
+version: 2
+
+models:
+  - name: dim_seller
+    description: "입점 셀러 마스터 차원 테이블입니다. 판매 카테고리 및 평가 평점을 포함합니다."
+    columns:
+      - name: seller_id
+        description: "셀러 고유 ID"
+      - name: seller_name
+        description: "셀러 명칭"
+      - name: email
+        description: "셀러 대표 이메일"
+      - name: join_date
+        description: "입점일 (YYYY-MM-DD)"
+      - name: location_id
+        description: "셀러 소재지 ID (dim_location 참조)"
+      - name: rating
+        description: "셀러 고객 만족도 평점 (1.0 ~ 5.0)"
+      - name: category_focus
+        description: "주력 판매 카테고리"
+
+  - name: dim_delivery_person
+    description: "배송 기사 마스터 차원 테이블입니다."
+    columns:
+      - name: delivery_person_id
+        description: "배송기사 고유 ID"
+      - name: delivery_person_name
+        description: "배송기사 이름"
+      - name: phone_number
+        description: "배송기사 연락처"
+      - name: gender
+        description: "성별 (Male, Female)"
+      - name: date_of_joining
+        description: "입사일 (YYYY-MM-DD)"
+      - name: employment_type
+        description: "고용 형태 (예: Full-time, Contract)"
+      - name: vehicle_type
+        description: "배송 수단 (예: Bike, Van)"
+      - name: location_id
+        description: "배송기사 소속 지역 ID (dim_location 참조)"
