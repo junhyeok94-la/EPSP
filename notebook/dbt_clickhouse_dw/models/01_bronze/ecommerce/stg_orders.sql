@@ -9,11 +9,6 @@
 =============================================================================
 */
 
--- [Pre/Post Hooks]
-{{ config(
-    pre_hook="-- 사전 로깅 예시: SELECT 'stg_orders 실행 시작'"
-) }}
-
 -- [Config]
 {{ config(materialized='view') }}
 

@@ -20,7 +20,13 @@ clean-targets:
 # 모델 구체화(Materialization) 기본 설정
 models:
   dbt_clickhouse_dw:
-    staging:
+    +quote_columns: false
+    +persist_docs:
+      relation: true
+      columns: true
+    "01_bronze":
       +materialized: view
-    marts:
-      +materialized: incremental
+    "02_silver":
+      +materialized: table
+    "03_gold":
+      +materialized: table

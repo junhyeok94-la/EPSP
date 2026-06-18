@@ -85,7 +85,7 @@ Orchestration & Ingestion 레이어               Data Infrastructure 레이어 
     ├── dbt_clickhouse_dw/           # ClickHouse 전용 dbt 데이터 마트 모델링 프로젝트
     │   ├── dbt_project.yml
     │   ├── profiles.yml
-    │   └── models/                  # staging(SHA-256 마스킹) 및 marts(ReplacingMergeTree 변환)
+    │   └── models/                  # 01_bronze(원천 수집), 02_silver(정제 및 Dim/Fact), 03_gold(마트 집계)
     └── airflow_3_2/                 # [Submodule] Airflow 3.2.2 샌드박스 및 오케스트레이션 DAG
         ├── docker-compose.yaml
         └── dags/

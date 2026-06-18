@@ -29,3 +29,6 @@ notebook/dbt_clickhouse_dw/logs/
 *.swp
 .DS_Store
 Thumbs.db
+
+# Kaggle 대용량 CSV 데이터셋 무시 (GitHub 100MB 용량 초과 방지)
+notebook/kaggle_data/*.csv

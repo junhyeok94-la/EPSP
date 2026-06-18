@@ -1,5 +1,5 @@
 {
-  "name": "clickhouse-sink-connector",
+  "name": "clickhouse-sink-connector-v2",
   "config": {
     "connector.class": "com.clickhouse.kafka.connect.ClickHouseSinkConnector",
     "tasks.max": "1",
@@ -10,12 +10,10 @@
     "username": "default",
     "password": "",
     "ssl": "false",
-    
     "value.converter": "org.apache.kafka.connect.json.JsonConverter",
     "value.converter.schemas.enable": "false",
     "key.converter": "org.apache.kafka.connect.json.JsonConverter",
     "key.converter.schemas.enable": "false",
-    
     "transforms": "route",
     "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
     "transforms.route.regex": "ecommerce\\.public\\.(.*)",

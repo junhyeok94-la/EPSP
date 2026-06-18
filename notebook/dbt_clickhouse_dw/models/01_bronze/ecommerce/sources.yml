@@ -1,0 +1,25 @@
+version: 2
+
+sources:
+  - name: clickhouse
+    schema: default
+    tables:
+      - name: stg_orders
+      - name: stg_products
+      - name: stg_payments
+      - name: stg_users
+      - name: stg_dim_calendar
+      - name: stg_dim_channel
+      - name: stg_dim_campaign
+      - name: stg_dim_location
+      - name: stg_dim_customer
+      - name: stg_dim_delivery_person
+      - name: stg_dim_fulfillment
+      - name: stg_dim_payment
+      - name: stg_dim_product
+      - name: stg_dim_seller
+      - name: stg_fact_customer_rfm
+      - name: stg_fact_fulfillment_performance
+      - name: stg_fact_marketing_spend
+      - name: stg_fact_orders
+      - name: stg_fact_returns

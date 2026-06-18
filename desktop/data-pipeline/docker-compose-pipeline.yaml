@@ -26,7 +26,7 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_HEAP_OPTS: '-Xms512m -Xmx512m'
-      CLUSTER_ID: '4L62C3q8QO69I3edzZb0Q'
+      CLUSTER_ID: 'H5_1S7vERNin56RHdeYspw'
     networks:
       - ecommerce-data-network
     restart: always

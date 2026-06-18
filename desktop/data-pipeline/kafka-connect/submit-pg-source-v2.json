@@ -1,5 +1,5 @@
 {
-  "name": "postgres-source-connector",
+  "name": "postgres-source-connector-v2",
   "config": {
     "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
     "tasks.max": "1",
@@ -14,12 +14,12 @@
     "decimal.handling.mode": "double",
     "schema.history.internal.kafka.bootstrap.servers": "kafka:9092",
     "schema.history.internal.kafka.topic": "schemahistory.ecommerce",
-    
     "transforms": "unwrap",
     "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
     "transforms.unwrap.add.fields": "op,ts_ms",
     "transforms.unwrap.add.fields.prefix": "",
     "transforms.unwrap.drop.tombstones": "true",
-    "transforms.unwrap.delete.handling.mode": "rewrite"
+    "transforms.unwrap.delete.handling.mode": "rewrite",
+    "slot.name": "debezium_slot_v2"
   }
 }
