@@ -357,4 +357,61 @@ my_pipeline()
    -- [SQL 본문]
    select
        ...
-   ```
+   ```
+
+4. **메달리온 아키텍처(Medallion Architecture) 표준**
+
+메달리온 아키텍처는 원시(Raw) 데이터를 세 단계 계층(Bronze → Silver → Gold)으로 점진적으로 정제하여 고품질의 비즈니스 인사이트로 변환하는 데이터 레이크하우스 디자인 패턴입니다. 본 프로젝트의 dbt 데이터 파이프라인은 이 계층 구조를 명확히 준수해야 합니다.
+
+* **브론즈 레이어 (Bronze Layer / Staging)**
+  * **역할**: 외부 시스템(예: PostgreSQL CDC, Clickstream)에서 수집된 초기 데이터가 적재되는 영역입니다. 원본 데이터를 있는 그대로 보존하여, 데이터 유실을 방지하고 필요시 원본 데이터를 재처리(Replay)할 수 있게 합니다.
+  * **특징**: 무수히 발생하는 원시 로그가 1:1로 매핑되는 영역으로, 주로 `view` 혹은 대용량 분석 데이터의 경우 `MergeTree` 엔진 테이블로 구체화합니다.
+* **실버 레이어 (Silver Layer / Intermediate)**
+  * **역할**: 브론즈 레이어 데이터를 기반으로 필터링, 중복 제거(Deduplication), 데이터 마스킹, 스키마 적용 및 정규화를 수행하여 정제된 엔터프라이즈 기준 데이터를 만듭니다. 신뢰할 수 있는 단일 소스(Single Source of Truth, SSOT) 역할을 합니다.
+  * **특징**: ClickHouse 환경에서 중복 제거 및 최신화를 위해 `ReplacingMergeTree` 엔진을 적극 활용합니다.
+* **골드 레이어 (Gold Layer / Marts)**
+  * **역할**: BI 대시보드, 분석 보고서, 머신러닝 모델 등에 최종 요약된 비즈니스 수준 데이터를 제공합니다. 부서 및 분석 목적에 맞추어 사전에 집계(Aggregation)된 형태를 가집니다.
+  * **특징**: 초고속 쿼리 성능을 보장하기 위해 `SummingMergeTree` 또는 `AggregatingMergeTree` 엔진을 활용하거나, 배치 주기 스캔 비용을 줄이기 위해 실시간 Materialized View 패턴을 채택합니다.
+
+---
+
+5. **ClickHouse 특화 dbt 모범사례**
+
+ClickHouse는 컬럼 지향 OLAP DB로서 고유의 아키텍처적 특성을 가집니다. 성능 극대화 및 리소스 절약을 위해 dbt-clickhouse 결합 시 다음 5가지 모범사례를 의무적으로 준수해야 합니다.
+
+#### [1] 레이어별 ClickHouse 엔진 및 구체화(Materialization) 매핑
+dbt 모델의 `config()` 매크로 또는 `dbt_project.yml`을 통해 계층별로 최적의 테이블 엔진과 구체화 전략을 정의합니다.
+* **Bronze (Staging)**: 
+  * 기본적으로 가벼운 `view`로 처리합니다. 단, 대량의 실시간 클릭스트림 데이터 등이 유입되어 원천 버퍼링이 필요하다면 `MergeTree` 엔진으로 구체화합니다.
+* **Silver (Intermediate)**:
+  * 데이터 정제 및 중복 제거가 일어나는 계층입니다. ClickHouse는 `UPDATE` 연산 비용이 매우 크므로, 동일 PK 기준 최신 타임스탬프(`ts_ms`) 데이터만 병합하는 `ReplacingMergeTree` 엔진을 필수적으로 정의합니다.
+  * *예시 (int_users.sql)*:
+    ```sql
+    {{ config(
+        materialized='table',
+        engine='ReplacingMergeTree(ts_ms)',
+        order_by='user_id',
+        primary_key='user_id'
+    ) }}
+    ```
+* **Gold (Marts)**:
+  * 초고속 조회 및 리포팅을 위해 정렬/차원별로 사전에 집계해두는 `SummingMergeTree` 또는 고도화된 통계 분석용 `AggregatingMergeTree` 엔진을 지정하여 마트를 생성합니다.
+
+#### [2] 실시간 파이프라인을 위한 Materialized View 패턴 활용
+ClickHouse는 실시간 스트리밍 분석에 특화되어 있습니다. 주기적인 대규모 배치 스캔(전체 테이블 스캔)을 방지하고 실시간으로 지표를 반영하기 위해 `materialized_view` 구체화 방식을 씁니다.
+* **모범사례**: 소스 테이블에 데이터가 인입될 때마다 백그라운드에서 실시간으로 트리거되어 요약 대상 테이블(Target Table)에 데이터를 증분 밀어 넣어주는 ClickHouse Native Materialized View를 dbt 모델로 관리하여, dbt DAG의 계보 및 가시성을 유지하면서 실시간 스트리밍 처리를 구현합니다.
+
+#### [3] 성능 극대화를 위한 Index 및 Partition 전략 주입
+ClickHouse는 희소 인덱스(Sparse Index)를 사용하므로, 적절한 정렬 및 파티셔닝 키 설정이 누락되면 스캔 범위 증가로 성능이 급격히 저하됩니다.
+* **`order_by` (필수)**: 쿼리의 `WHERE` 조건이나 `JOIN` 조건에 주로 쓰이는 컬럼(예: `customer_id`, `event_type`)을 결합 튜플 형태로 지정하여 희소 인덱스를 자동 생성합니다.
+* **`partition_by` (선택)**: 데이터 볼륨이 일별/월별로 수천만 건 이상 적재되는 팩트 테이블의 경우, `toYYYYMM(created_at)`과 같이 월/일 단위 파티셔닝 키를 명시하여 데이터 삭제(Drop Partition) 및 쿼리 시의 데이터 프루닝(Data Pruning)을 유도합니다.
+
+#### [4] 대용량 데이터를 위한 Incremental(증분) 전략 최적화
+전체 테이블 재빌드에 따른 리소스 낭비를 방지하기 위해 dbt의 증분(Incremental) 빌드를 적극 도입합니다. dbt-clickhouse 어댑터가 제공하는 다음 증분 전략을 목적에 맞게 매핑합니다.
+1. **`append` 전략 (추천)**: 로그성 데이터처럼 과거 행이 수정되지 않는 Insert-only 형태인 경우, 단순 추가 연산만 수행하므로 ClickHouse 설계 철학에 가장 부합하며 가장 가볍습니다.
+2. **`delete+insert` 전략**: 과거 특정 기간/파티션의 데이터 갱신이 발생하여 덮어쓰기가 필요할 때 사용합니다. dbt가 자동으로 기존 블록을 지우고 신규 블록을 삽입합니다.
+
+#### [5] 연결 세션 설정 제어 및 프로필 최적화
+dbt 모델 내에서 `pre-hook` 등을 통해 데이터베이스 세션 파라미터를 동적으로 변경(`SET ...`)하면 로드밸런서나 ClickHouse Cloud 등 분산 환경에서 세션 유실로 파이프라인이 오동작할 위험이 있습니다.
+* **profiles.yml 최적화**: 특정 쿼리 최적화 옵션(예: `join_use_nulls=1` 등)이 전역적으로 필요한 경우, SQL 훅이 아닌 `profiles.yml` 파일의 `custom_settings` 속성에 설정해두고 활용합니다.
+* **`quote_columns` 비활성화**: ClickHouse의 이스케이프 문자 처리로 인한 불필요한 파싱 리소스를 아끼기 위해 `dbt_project.yml` 내에 `+quote_columns: false` 설정을 명시합니다.
