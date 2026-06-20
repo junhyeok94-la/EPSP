@@ -298,3 +298,33 @@ CREATE TABLE IF NOT EXISTS default.stg_fact_returns (
 ) ENGINE = ReplacingMergeTree(ts_ms)
 PRIMARY KEY order_line_id ORDER BY order_line_id;
 ALTER TABLE default.stg_fact_returns MODIFY TTL toDateTime(ts_ms) + INTERVAL 7 DAY;
+
+-- 4. 추가 CDC 및 Clickstream 테이블 생성
+CREATE TABLE IF NOT EXISTS default.stg_users (
+    user_id String,
+    age_group String,
+    gender String,
+    location String,
+    membership_tier String,
+    op String,
+    ts_ms DateTime64(3)
+) ENGINE = ReplacingMergeTree(ts_ms)
+PRIMARY KEY user_id ORDER BY user_id;
+ALTER TABLE default.stg_users MODIFY TTL toDateTime(ts_ms) + INTERVAL 7 DAY;
+
+CREATE TABLE IF NOT EXISTS default.stg_payments (
+    payment_id String,
+    order_id String,
+    payment_method String,
+    amount Decimal(12, 2),
+    status String,
+    op String,
+    ts_ms DateTime64(3)
+) ENGINE = ReplacingMergeTree(ts_ms)
+PRIMARY KEY payment_id ORDER BY payment_id;
+ALTER TABLE default.stg_payments MODIFY TTL toDateTime(ts_ms) + INTERVAL 7 DAY;
+
+CREATE TABLE IF NOT EXISTS default.kafka_clickstream (
+    message String
+) ENGINE = MergeTree()
+ORDER BY tuple();

@@ -9,12 +9,22 @@ from datetime import datetime
 # 필요한 라이브러리 동적 로드 시도 및 안내
 try:
     import psycopg2
+except ImportError:
+    psycopg2 = None
+
+try:
     from faker import Faker
+except ImportError:
+    Faker = None
+
+try:
     from confluent_kafka import Producer
 except ImportError:
-    print("[Error] 필수 라이브러리(psycopg2-binary, Faker, confluent-kafka)가 설치되어 있지 않습니다.")
-    print("설치 명령어: pip install psycopg2-binary faker confluent-kafka")
-    sys.exit(1)
+    Producer = None
+
+if psycopg2 is None or Faker is None or Producer is None:
+    print("[Warning] 일부 필수 라이브러리(psycopg2-binary, Faker, confluent-kafka)가 설치되어 있지 않습니다.")
+    print("실제 시뮬레이션 동작을 위해서는 설치가 필요합니다: pip install psycopg2-binary faker confluent-kafka")
 
 # 설정 (환경 변수 또는 기본값)
 DB_HOST = os.getenv("TAILSCALE_DESKTOP_IP", "localhost")
@@ -23,8 +33,9 @@ DB_NAME = os.getenv("DB_NAME", "ecommerce")
 DB_USER = os.getenv("DB_USER", "postgres")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "postgres")
 
-KAFKA_BROKER = f"{DB_HOST}:9092"
+KAFKA_BROKER = f"{DB_HOST}:9094"
 CLICKSTREAM_TOPIC = "clickstream_events"
+ORDER_STREAM_TOPIC = "ecommerce_orders_stream"
 
 # 상품 정보 마스터 (임의의 가격과 함께 프로그램 메모리상 관리)
 PRODUCT_MASTER = [
@@ -40,7 +51,12 @@ PRODUCT_MASTER = [
     {"id": "PROD-010", "name": "Leather Passport Holder", "category": "Accessories", "price": 15.00}
 ]
 
-fake = Faker()
+if Faker is not None:
+    fake = Faker()
+else:
+    class DummyFaker:
+        def city(self): return "Dummy City"
+    fake = DummyFaker()
 
 # 유저 풀 생성
 USER_MASTER = []
@@ -135,6 +151,27 @@ def send_clickstream_event(producer, user_id, product_id, event_type):
     except Exception as e:
         print(f"[Warning] Kafka Clickstream 전송 실패: {e}")
 
+def send_order_stream_event(producer, order_id, user_id, product_id, quantity, total_price, status):
+    """실시간 스트림 처리를 위해 Kafka로 주문/취소 이벤트 JSON 전송"""
+    if producer is None: return
+    
+    event = {
+        "event_id": f"EVT-{uuid.uuid4().hex[:12].upper()}",
+        "order_id": order_id,
+        "user_id": user_id,
+        "product_id": product_id,
+        "quantity": quantity,
+        "total_price": float(total_price),
+        "status": status,
+        "event_time": datetime.now().isoformat()
+    }
+    
+    try:
+        producer.produce(ORDER_STREAM_TOPIC, key=user_id, value=json.dumps(event))
+        producer.poll(0)
+    except Exception as e:
+        print(f"[Warning] Kafka Order Stream 전송 실패: {e}")
+
 def generate_order(conn, producer):
     """주문 및 결제 트랜잭션, 그리고 Clickstream 전송"""
     product = random.choice(PRODUCT_MASTER)
@@ -198,6 +235,9 @@ def generate_order(conn, producer):
             # 구매 완료 행동 로그 전송
             send_clickstream_event(producer, user_id, product["id"], "purchase")
             
+            # 실시간 주문 스트림 전송 (Partition Key: user_id)
+            send_order_stream_event(producer, order_id, user_id, product["id"], quantity, total_price, "CREATED")
+            
         except Exception as e:
             conn.rollback()
             print(f"[Error] 주문 트랜잭션 실패: {e}")
@@ -208,7 +248,7 @@ def simulate_cancellation(conn, producer):
         try:
             cur.execute(
                 """
-                SELECT order_id, product_id, quantity 
+                SELECT order_id, product_id, quantity, user_id, total_price 
                 FROM orders 
                 WHERE status = 'CREATED' 
                 LIMIT 1 FOR UPDATE SKIP LOCKED;
@@ -217,7 +257,7 @@ def simulate_cancellation(conn, producer):
             row = cur.fetchone()
             if not row: return
             
-            order_id, product_id, quantity = row
+            order_id, product_id, quantity, user_id, total_price = row
             now = datetime.now()
             
             # 1. 주문 상태 변경
@@ -229,6 +269,9 @@ def simulate_cancellation(conn, producer):
             
             conn.commit()
             print(f"[Order Cancelled & Refunded] {order_id} | 재고 복구 완료")
+            
+            # 실시간 취소 스트림 전송 (Partition Key: user_id)
+            send_order_stream_event(producer, order_id, user_id, product_id, quantity, total_price, "CANCELLED")
             
         except Exception as e:
             conn.rollback()
@@ -243,8 +286,11 @@ def main():
     
     producer = None
     try:
-        producer = Producer({'bootstrap.servers': KAFKA_BROKER, 'message.timeout.ms': 3000})
-        print("[Info] Kafka 프로듀서 초기화 성공!")
+        if Producer is not None:
+            producer = Producer({'bootstrap.servers': KAFKA_BROKER, 'message.timeout.ms': 3000})
+            print("[Info] Kafka 프로듀서 초기화 성공!")
+        else:
+            print("[Warning] confluent-kafka 라이브러리가 없어 Kafka 전송을 생략합니다.")
     except Exception as e:
         print(f"[Warning] Kafka 프로듀서 초기화 실패 (Clickstream 무시됨): {e}")
     

@@ -24,5 +24,5 @@ select
     rfm_score,
     customer_segment,
     op,
-    ts_ms
+    toTimeZone(ts_ms, 'Asia/Seoul') as ts_ms
 from {{ source('clickhouse', 'stg_fact_customer_rfm') }}

@@ -12,7 +12,7 @@
 {{ config(
     materialized='table',
     engine='MergeTree()',
-    order_by='(sales_date, category, membership_tier)'
+    order_by='sales_date'
 ) }}
 
 -- [SQL 본문]
@@ -26,7 +26,7 @@ products as (
     select * from {{ ref('dim_products') }} FINAL
 )
 select
-    toDate(toDateTime(s.ts_ms / 1000)) as sales_date,
+    toDate(s.ts_ms) as sales_date,
     u.age_group,
     u.gender,
     u.location,

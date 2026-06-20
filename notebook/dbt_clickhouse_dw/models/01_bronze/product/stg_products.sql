@@ -19,5 +19,5 @@ select
     category,
     stock_quantity,
     op,
-    ts_ms
+    toTimeZone(ts_ms, 'Asia/Seoul') as ts_ms
 from {{ source('clickhouse', 'stg_products') }}

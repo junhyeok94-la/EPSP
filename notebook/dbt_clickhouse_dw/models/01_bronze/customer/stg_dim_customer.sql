@@ -27,5 +27,5 @@ select
     upi_id,
     credit_card_number,
     op,
-    ts_ms
+    toTimeZone(ts_ms, 'Asia/Seoul') as ts_ms
 from {{ source('clickhouse', 'stg_dim_customer') }}

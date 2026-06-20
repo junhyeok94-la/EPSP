@@ -13,11 +13,11 @@
 
 -- [SQL 본문]
 select
-    lower(hex(sha256(concat(user_id, 'EPSP_SALT_2026')))) as user_id,
+    lower(hex(SHA256(concat(user_id, 'EPSP_SALT_2026')))) as user_id,
     age_group,
     gender,
     location,
     membership_tier,
     op,
-    ts_ms
+    toTimeZone(ts_ms, 'Asia/Seoul') as ts_ms
 from {{ source('clickhouse', 'stg_users') }}

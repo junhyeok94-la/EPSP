@@ -14,7 +14,7 @@
 -- [SQL 본문]
 select
     JSONExtractString(message, 'event_id') as event_id,
-    lower(hex(sha256(concat(JSONExtractString(message, 'user_id'), 'EPSP_SALT_2026')))) as user_id,
+    lower(hex(SHA256(concat(JSONExtractString(message, 'user_id'), 'EPSP_SALT_2026')))) as user_id,
     JSONExtractString(message, 'session_id') as session_id,
     JSONExtractString(message, 'event_type') as event_type,
     JSONExtractString(message, 'product_id') as product_id,

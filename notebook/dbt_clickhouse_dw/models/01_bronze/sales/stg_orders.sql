@@ -15,11 +15,11 @@
 -- [SQL 본문]
 select
     order_id,
-    lower(hex(sha256(concat(user_id, 'EPSP_SALT_2026')))) as user_id,
+    lower(hex(SHA256(concat(user_id, 'EPSP_SALT_2026')))) as user_id,
     product_id,
     quantity,
     total_price,
     status,
     op,
-    ts_ms
+    toTimeZone(ts_ms, 'Asia/Seoul') as ts_ms
 from {{ source('clickhouse', 'stg_orders') }}

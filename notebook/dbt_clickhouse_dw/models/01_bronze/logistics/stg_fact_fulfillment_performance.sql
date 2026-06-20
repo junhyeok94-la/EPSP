@@ -28,5 +28,5 @@ select
     sla_breach_rate,
     return_rate,
     op,
-    ts_ms
+    toTimeZone(ts_ms, 'Asia/Seoul') as ts_ms
 from {{ source('clickhouse', 'stg_fact_fulfillment_performance') }}

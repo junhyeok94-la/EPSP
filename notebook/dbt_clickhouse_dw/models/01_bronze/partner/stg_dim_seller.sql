@@ -25,5 +25,5 @@ select
     bank_account_number,
     ifsc_code,
     op,
-    ts_ms
+    toTimeZone(ts_ms, 'Asia/Seoul') as ts_ms
 from {{ source('clickhouse', 'stg_dim_seller') }}

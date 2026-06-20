@@ -19,5 +19,5 @@ select
     delivery_sla_days,
     base_shipping_cost,
     op,
-    ts_ms
+    toTimeZone(ts_ms, 'Asia/Seoul') as ts_ms
 from {{ source('clickhouse', 'stg_dim_fulfillment') }}

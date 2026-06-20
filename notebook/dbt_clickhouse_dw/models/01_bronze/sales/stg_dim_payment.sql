@@ -18,5 +18,5 @@ select
     payment_provider,
     description,
     op,
-    ts_ms
+    toTimeZone(ts_ms, 'Asia/Seoul') as ts_ms
 from {{ source('clickhouse', 'stg_dim_payment') }}

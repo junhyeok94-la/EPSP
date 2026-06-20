@@ -22,5 +22,5 @@ select
     budget,
     objective,
     op,
-    ts_ms
+    toTimeZone(ts_ms, 'Asia/Seoul') as ts_ms
 from {{ source('clickhouse', 'stg_dim_campaign') }}

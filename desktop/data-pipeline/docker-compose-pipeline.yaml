@@ -26,6 +26,7 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_HEAP_OPTS: '-Xms512m -Xmx512m'
+      KAFKA_NUM_PARTITIONS: 3
       CLUSTER_ID: 'H5_1S7vERNin56RHdeYspw'
     networks:
       - ecommerce-data-network
@@ -69,6 +70,44 @@ services:
     volumes:
       - clickhouse_data:/var/lib/clickhouse
       - ./clickhouse-init/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    networks:
+      - ecommerce-data-network
+    restart: always
+
+  flink-jobmanager:
+    image: flink:1.17.1-scala_2.12
+    container_name: ecommerce-flink-jobmanager
+    ports:
+      - "8081:8081"
+    command: jobmanager
+    environment:
+      - "FLINK_PROPERTIES=jobmanager.rpc.address: flink-jobmanager"
+    networks:
+      - ecommerce-data-network
+    restart: always
+
+  flink-taskmanager:
+    image: flink:1.17.1-scala_2.12
+    container_name: ecommerce-flink-taskmanager
+    depends_on:
+      - flink-jobmanager
+    command: taskmanager
+    environment:
+      - "FLINK_PROPERTIES=jobmanager.rpc.address: flink-jobmanager"
+    networks:
+      - ecommerce-data-network
+    restart: always
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: ecommerce-kafka-ui
+    ports:
+      - "8089:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local-cluster
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_CONNECT_0_NAME: local-connect
+      KAFKA_CLUSTERS_0_CONNECT_0_ADDRESS: http://connect:8083
     networks:
       - ecommerce-data-network
     restart: always

@@ -30,5 +30,5 @@ select
     customer_rating,
     sentiment_score,
     op,
-    ts_ms
+    toTimeZone(ts_ms, 'Asia/Seoul') as ts_ms
 from {{ source('clickhouse', 'stg_fact_returns') }}

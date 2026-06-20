@@ -22,5 +22,5 @@ select
     vehicle_type,
     location_id,
     op,
-    ts_ms
+    toTimeZone(ts_ms, 'Asia/Seoul') as ts_ms
 from {{ source('clickhouse', 'stg_dim_delivery_person') }}
