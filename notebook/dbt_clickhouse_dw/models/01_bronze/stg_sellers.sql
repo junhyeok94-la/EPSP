@@ -13,7 +13,7 @@
 ) }}
 
 select
-    lower(hex(sha256(concat(seller_id, 'epsp_secure_salt')))) as seller_id,
+    lower(hex(SHA256(concat(seller_id, 'epsp_secure_salt')))) as seller_id,
     seller_zip_code_prefix,
     seller_city,
     seller_state,

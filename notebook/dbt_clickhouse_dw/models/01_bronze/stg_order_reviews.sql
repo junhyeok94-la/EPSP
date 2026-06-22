@@ -18,8 +18,10 @@ select
     review_score,
     review_comment_title,
     review_comment_message,
-    review_creation_date,
-    review_answer_timestamp,
+    toTimeZone(fromUnixTimestamp64Micro(review_creation_date), 'Asia/Seoul') as review_creation_date,
+    toTimeZone(fromUnixTimestamp64Micro(review_answer_timestamp), 'Asia/Seoul') as review_answer_timestamp,
     op,
     toTimeZone(ts_ms, 'Asia/Seoul') as ts_ms
 from {{ source('clickhouse_source', 'stg_olist_order_reviews') }}
+
+

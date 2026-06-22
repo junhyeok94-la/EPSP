@@ -32,11 +32,11 @@ CREATE TABLE IF NOT EXISTS default.stg_olist_orders (
     order_id String,
     customer_id String,
     order_status String,
-    order_purchase_timestamp Nullable(DateTime64(3)),
-    order_approved_at Nullable(DateTime64(3)),
-    order_delivered_carrier_date Nullable(DateTime64(3)),
-    order_delivered_customer_date Nullable(DateTime64(3)),
-    order_estimated_delivery_date Nullable(DateTime64(3)),
+    order_purchase_timestamp Nullable(Int64),
+    order_approved_at Nullable(Int64),
+    order_delivered_carrier_date Nullable(Int64),
+    order_delivered_customer_date Nullable(Int64),
+    order_estimated_delivery_date Nullable(Int64),
     op String,
     ts_ms DateTime64(3)
 ) ENGINE = ReplacingMergeTree(ts_ms)
@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS default.stg_olist_order_items (
     order_item_id Int32,
     product_id String,
     seller_id String,
-    shipping_limit_date Nullable(DateTime64(3)),
+    shipping_limit_date Nullable(Int64),
     price Decimal(12, 2),
     freight_value Decimal(12, 2),
     op String,
@@ -81,8 +81,8 @@ CREATE TABLE IF NOT EXISTS default.stg_olist_order_reviews (
     review_score Int32,
     review_comment_title Nullable(String),
     review_comment_message Nullable(String),
-    review_creation_date Nullable(DateTime64(3)),
-    review_answer_timestamp Nullable(DateTime64(3)),
+    review_creation_date Nullable(Int64),
+    review_answer_timestamp Nullable(Int64),
     op String,
     ts_ms DateTime64(3)
 ) ENGINE = ReplacingMergeTree(ts_ms)

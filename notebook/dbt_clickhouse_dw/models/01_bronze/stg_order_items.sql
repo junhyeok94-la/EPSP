@@ -16,10 +16,12 @@ select
     order_id,
     order_item_id,
     product_id,
-    lower(hex(sha256(concat(seller_id, 'epsp_secure_salt')))) as seller_id,
-    shipping_limit_date,
+    lower(hex(SHA256(concat(seller_id, 'epsp_secure_salt')))) as seller_id,
+    toTimeZone(fromUnixTimestamp64Micro(shipping_limit_date), 'Asia/Seoul') as shipping_limit_date,
     price,
     freight_value,
     op,
     toTimeZone(ts_ms, 'Asia/Seoul') as ts_ms
 from {{ source('clickhouse_source', 'stg_olist_order_items') }}
+
+

@@ -5,6 +5,7 @@
 * 
 * [수정 이력]
 * - 2026-06-22 [Antigravity] : 최초 생성 및 FINAL 키워드 기반 ReplacingMergeTree 집계 적용
+* - 2026-06-22 [Antigravity] : ClickHouse FINAL 조인 구문 에러 방지를 위해 CTE 서브쿼리 구조로 리팩토링
 =============================================================================
 */
 
@@ -13,14 +14,22 @@
     order_by='customer_unique_id'
 ) }}
 
-with customer_orders as (
+with orders_deduped as (
+    select * from {{ ref('fact_orders') }} FINAL
+),
+
+customers_deduped as (
+    select * from {{ ref('dim_customers') }} FINAL
+),
+
+customer_orders as (
     select
         c.customer_unique_id as customer_unique_id,
         o.order_id as order_id,
         o.order_purchase_timestamp as order_purchase_timestamp,
         o.price as price
-    from {{ ref('fact_orders') }} FINAL as o
-    inner join {{ ref('dim_customers') }} FINAL as c on o.customer_id = c.customer_id
+    from orders_deduped as o
+    inner join customers_deduped as c on o.customer_id = c.customer_id
 ),
 
 max_date_ref as (

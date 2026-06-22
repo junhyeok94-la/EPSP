@@ -14,13 +14,15 @@
 
 select
     order_id,
-    lower(hex(sha256(concat(customer_id, 'epsp_secure_salt')))) as customer_id,
+    lower(hex(SHA256(concat(customer_id, 'epsp_secure_salt')))) as customer_id,
     order_status,
-    order_purchase_timestamp,
-    order_approved_at,
-    order_delivered_carrier_date,
-    order_delivered_customer_date,
-    order_estimated_delivery_date,
+    toTimeZone(fromUnixTimestamp64Micro(order_purchase_timestamp), 'Asia/Seoul') as order_purchase_timestamp,
+    toTimeZone(fromUnixTimestamp64Micro(order_approved_at), 'Asia/Seoul') as order_approved_at,
+    toTimeZone(fromUnixTimestamp64Micro(order_delivered_carrier_date), 'Asia/Seoul') as order_delivered_carrier_date,
+    toTimeZone(fromUnixTimestamp64Micro(order_delivered_customer_date), 'Asia/Seoul') as order_delivered_customer_date,
+    toTimeZone(fromUnixTimestamp64Micro(order_estimated_delivery_date), 'Asia/Seoul') as order_estimated_delivery_date,
     op,
     toTimeZone(ts_ms, 'Asia/Seoul') as ts_ms
 from {{ source('clickhouse_source', 'stg_olist_orders') }}
+
+
