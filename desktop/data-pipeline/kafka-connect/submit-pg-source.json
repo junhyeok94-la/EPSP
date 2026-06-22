@@ -9,7 +9,7 @@
     "database.password": "postgres",
     "database.dbname": "ecommerce",
     "topic.prefix": "ecommerce",
-    "table.include.list": "public.products,public.orders,public.dim_calendar,public.dim_campaign,public.dim_channel,public.dim_customer,public.dim_delivery_person,public.dim_fulfillment,public.dim_location,public.dim_payment,public.dim_product,public.dim_seller,public.fact_customer_rfm,public.fact_fulfillment_performance,public.fact_marketing_spend,public.fact_orders,public.fact_returns",
+    "table.include.list": "public.olist_customers,public.olist_geolocation,public.olist_orders,public.olist_order_items,public.olist_order_payments,public.olist_order_reviews,public.olist_products,public.olist_sellers,public.product_category_name_translation",
     "plugin.name": "pgoutput",
     "decimal.handling.mode": "double",
     "schema.history.internal.kafka.bootstrap.servers": "kafka:9092",

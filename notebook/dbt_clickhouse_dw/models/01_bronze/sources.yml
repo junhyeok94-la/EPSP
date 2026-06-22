@@ -1,0 +1,16 @@
+version: 2
+
+sources:
+  - name: clickhouse_source
+    database: default
+    schema: default
+    tables:
+      - name: stg_olist_customers
+      - name: stg_olist_geolocation
+      - name: stg_olist_orders
+      - name: stg_olist_order_items
+      - name: stg_olist_order_payments
+      - name: stg_olist_order_reviews
+      - name: stg_olist_products
+      - name: stg_olist_sellers
+      - name: stg_product_category_name_translation

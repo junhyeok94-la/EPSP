@@ -3,7 +3,7 @@
   "config": {
     "connector.class": "com.clickhouse.kafka.connect.ClickHouseSinkConnector",
     "tasks.max": "1",
-    "topics": "ecommerce.public.orders,ecommerce.public.products,ecommerce.public.dim_calendar,ecommerce.public.dim_campaign,ecommerce.public.dim_channel,ecommerce.public.dim_customer,ecommerce.public.dim_delivery_person,ecommerce.public.dim_fulfillment,ecommerce.public.dim_location,ecommerce.public.dim_payment,ecommerce.public.dim_product,ecommerce.public.dim_seller,ecommerce.public.fact_customer_rfm,ecommerce.public.fact_fulfillment_performance,ecommerce.public.fact_marketing_spend,ecommerce.public.fact_orders,ecommerce.public.fact_returns",
+    "topics": "ecommerce.public.olist_customers,ecommerce.public.olist_geolocation,ecommerce.public.olist_orders,ecommerce.public.olist_order_items,ecommerce.public.olist_order_payments,ecommerce.public.olist_order_reviews,ecommerce.public.olist_products,ecommerce.public.olist_sellers,ecommerce.public.product_category_name_translation",
     "hostname": "clickhouse",
     "port": "8123",
     "database": "default",

@@ -1,9 +1,0 @@
-version: 2
-
-sources:
-  - name: clickhouse
-    schema: default
-    tables:
-      - name: stg_dim_customer
-      - name: stg_fact_customer_rfm
-      - name: stg_users

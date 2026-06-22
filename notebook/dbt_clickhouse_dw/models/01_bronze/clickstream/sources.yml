@@ -1,7 +1,0 @@
-version: 2
-
-sources:
-  - name: clickhouse
-    schema: default
-    tables:
-      - name: kafka_clickstream

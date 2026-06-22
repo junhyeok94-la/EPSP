@@ -29,38 +29,28 @@ DATA_DIR = r"d:\01.DEV\EPSP\notebook\kaggle_data"
 
 # 파일명과 클릭하우스 테이블 매핑
 MAPPING = {
-    "DIM_CALENDAR.csv": "stg_dim_calendar",
-    "DIM_CHANNEL.csv": "stg_dim_channel",
-    "DIM_CAMPAIGN.csv": "stg_dim_campaign",
-    "DIM_LOCATION.csv": "stg_dim_location",
-    "DIM_CUSTOMER.csv": "stg_dim_customer",
-    "DIM_DELIVERY_PERSON.csv": "stg_dim_delivery_person",
-    "DIM_FULFILLMENT.csv": "stg_dim_fulfillment",
-    "DIM_PAYMENT.csv": "stg_dim_payment",
-    "DIM_PRODUCT.csv": "stg_dim_product",
-    "DIM_SELLER.csv": "stg_dim_seller",
-    "FACT_CUSTOMER_RFM.csv": "stg_fact_customer_rfm",
-    "FACT_FULFILLMENT_PERFORMANCE.csv": "stg_fact_fulfillment_performance",
-    "FACT_MARKETING_SPEND.csv": "stg_fact_marketing_spend",
-    "FACT_ORDERS.csv": "stg_fact_orders",
-    "FACT_RETURNS.csv": "stg_fact_returns"
+    "olist_customers_dataset.csv": "stg_olist_customers",
+    "olist_geolocation_dataset.csv": "stg_olist_geolocation",
+    "olist_orders_dataset.csv": "stg_olist_orders",
+    "olist_order_items_dataset.csv": "stg_olist_order_items",
+    "olist_order_payments_dataset.csv": "stg_olist_order_payments",
+    "olist_order_reviews_dataset.csv": "stg_olist_order_reviews",
+    "olist_products_dataset.csv": "stg_olist_products",
+    "olist_sellers_dataset.csv": "stg_olist_sellers",
+    "product_category_name_translation.csv": "stg_product_category_name_translation"
 }
 
-def to_epoch_days(series):
-    """날짜 문자열 컬럼을 Epoch Days (1970-01-01 기준 일수) 정수형으로 변환"""
+def to_datetime_safe(series):
+    """날짜 문자열 컬럼을 Pandas DateTime 객체로 변환하여 ClickHouse의 DateTime64에 올바르게 매핑되도록 함"""
     try:
-        dt = pd.to_datetime(series, errors='coerce')
-        epoch = pd.to_datetime('1970-01-01')
-        days = (dt - epoch).dt.days
-        # float 형태인 NaN을 None(ClickHouse Nullable에 매핑)으로 변환
-        return days.where(pd.notnull(days), None)
+        return pd.to_datetime(series, errors='coerce').where(pd.notnull(series), None)
     except Exception as e:
         print(f"[Warning] Date conversion warning: {e}")
         return series
 
 def main():
     print("==================================================")
-    print("  Kaggle CSV -> ClickHouse 적재 스크립트 시작")
+    print("  Olist CSV -> ClickHouse 적재 스크립트 시작")
     print(f"  Target ClickHouse: {CH_HOST}:{CH_PORT} (DB: {CH_DB})")
     print("==================================================")
 
@@ -77,12 +67,12 @@ def main():
         print(f"[Error] ClickHouse 연결에 실패했습니다: {e}")
         sys.exit(1)
 
-    # Epoch Days 변환 대상 날짜 컬럼 정의
+    # DateTime64(3) 변환 대상 날짜 컬럼 정의
     date_columns = [
-        "full_date", "start_date", "end_date", "date_of_birth", 
-        "registration_date", "date_of_joining", "join_date", 
-        "first_purchase_date", "last_purchase_date", "order_date", 
-        "expected_delivery_date", "actual_delivery_date", "return_date"
+        "order_purchase_timestamp", "order_approved_at", 
+        "order_delivered_carrier_date", "order_delivered_customer_date", 
+        "order_estimated_delivery_date", "shipping_limit_date", 
+        "review_creation_date", "review_answer_timestamp"
     ]
 
     for csv_file, table_name in MAPPING.items():
@@ -96,11 +86,11 @@ def main():
             # CSV 로드
             df = pd.read_csv(csv_path)
 
-            # 날짜 컬럼들을 Epoch Days 정수형으로 변환
+            # 날짜 컬럼들을 DateTime 객체로 변환
             for col in df.columns:
                 if col in date_columns:
-                    print(f"  - Converting column `{col}` to Epoch Days...")
-                    df[col] = to_epoch_days(df[col])
+                    print(f"  - Converting column `{col}` to Datetime...")
+                    df[col] = to_datetime_safe(df[col])
 
             # CDC 테이블 스키마에 필요한 공통 컬럼 추가 (op, ts_ms)
             df['op'] = 'c'
@@ -110,7 +100,7 @@ def main():
             table_info = client.query(f"DESCRIBE TABLE {table_name}")
             db_cols = {}
             for row in table_info.result_rows:
-                db_cols[row[0]] = row[1]  # 예: {'order_id': 'String', 'expected_delivery_date': 'Nullable(Int32)'}
+                db_cols[row[0]] = row[1]  # 예: {'order_id': 'String', 'price': 'Decimal(12, 2)'}
 
             # CSV/DataFrame에 있고 DB에 없는 컬럼 필터링
             insert_cols = [col for col in df.columns if col in db_cols]
@@ -124,15 +114,16 @@ def main():
 
                 if is_string:
                     if is_nullable:
-                        # Nullable(String) 이면 결측치는 None으로, 나머지는 명시적 string 변환
                         df_to_insert[col] = df_to_insert[col].apply(
                             lambda x: str(x) if pd.notnull(x) and x is not None else None
                         )
                     else:
-                        # Non-Nullable String 이면 결측치는 빈 문자열 ""로, 나머지는 명시적 string 변환
                         df_to_insert[col] = df_to_insert[col].apply(
                             lambda x: str(x) if pd.notnull(x) and x is not None else ""
                         )
+                elif "DateTime" in col_type:
+                    # DateTime 형식이면 Pandas NaT를 None으로 변환
+                    df_to_insert[col] = df_to_insert[col].where(pd.notnull(df_to_insert[col]), None)
                 else:
                     # 숫자 및 기타 타입 처리
                     if is_nullable:
@@ -148,7 +139,6 @@ def main():
 
             print(f"[Info] {len(df_to_insert)} 행을 {table_name} 에 삽입합니다... (컬럼수: {len(df_to_insert.columns)})")
             
-            # ReplacingMergeTree의 중복 적재 방지 및 단순 insert 호출
             client.insert_df(table=table_name, df=df_to_insert)
             print(f"[Success] {table_name} 적재 완료!")
 
@@ -157,7 +147,7 @@ def main():
             continue
 
     print("==================================================")
-    print("  Kaggle CSV -> ClickHouse 적재 프로세스 완료")
+    print("  Olist CSV -> ClickHouse 적재 프로세스 완료")
     print("==================================================")
 
 if __name__ == "__main__":
