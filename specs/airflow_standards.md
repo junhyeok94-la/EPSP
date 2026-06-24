@@ -32,6 +32,27 @@
 6. **Asset(구 Dataset) 기반 스케줄링 적용**
    - 2.x 버전에서 사용되던 `Dataset` 명칭은 3.x 버전부터 `Asset`으로 일괄 개편되었다.
    - 스케줄링 간 이벤트 기반 연쇄 흐름을 설계할 때는 `from airflow.sdk import Asset`을 선언하여 데이터 의존성 체인을 구성한다.
+7. **doc_md를 통한 DAG 상세 명세 의무화**
+   - 모든 DAG 선언 시 `@dag` 데코레이터 내부에 마크다운 포맷의 `doc_md` 필드를 필수로 정의한다.
+   - Airflow Web UI 상단에 렌더링되어 운영 직관성을 보장해야 하며, 포함될 내용 규격은 다음과 같다.
+     - **DAG의 목적 및 개요**
+     - **데이터 갱신 주기 및 스케줄 방식**
+     - **주요 입력 및 출력 데이터 자산 (Asset/Table)**
+     - **비즈니스 특이사항 및 에러 전파 규칙**
+     - *예시 코드*:
+       ```python
+       @dag(
+           dag_id=DAG_ID,
+           doc_md="""
+           ### [DAG 명칭]
+           이 파이프라인은 ...을 수행합니다.
+           * **소유자**: 데이터 플랫폼 팀
+           * **입력**: `postgres.olist_order_items`
+           * **출력**: `clickhouse.mart_daily_sales_wide`
+           """,
+           ...
+       )
+       ```
 
 ### 1.1 표준 코딩 모범 사례 (Best Practice)
 ```python
