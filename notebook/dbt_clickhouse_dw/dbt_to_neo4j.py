@@ -7,12 +7,20 @@ NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
 NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password")
 
-# dbt manifest.json 파일 경로
+# dbt manifest.json 및 catalog.json 파일 경로
 MANIFEST_PATH = os.path.join(os.path.dirname(__file__), "target", "manifest.json")
+CATALOG_PATH = os.path.join(os.path.dirname(__file__), "target", "catalog.json")
 
 def load_manifest(path):
     if not os.path.exists(path):
         raise FileNotFoundError(f"dbt manifest.json 파일을 찾을 수 없습니다: {path}. 'dbt compile' 또는 'dbt docs generate'를 먼저 실행하세요.")
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def load_catalog(path):
+    if not os.path.exists(path):
+        print(f"경고: catalog.json 파일을 찾을 수 없습니다: {path}. 실제 물리 컬럼 매핑 정보가 제한적일 수 있습니다.")
+        return {}
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
@@ -25,15 +33,17 @@ def clear_database(driver):
         # dbt 관련 노드 및 관계 삭제
         session.execute_write(run_cypher, "MATCH (n) WHERE n:Model OR n:Source OR n:Column DETACH DELETE n")
 
-def ingest_metadata(driver, manifest):
+def ingest_metadata(driver, manifest, catalog):
     nodes = manifest.get("nodes", {})
     sources = manifest.get("sources", {})
+
+    catalog_nodes = catalog.get("nodes", {})
+    catalog_sources = catalog.get("sources", {})
 
     with driver.session() as session:
         # 1. Model 노드 및 관련 Column 노드 생성
         print("dbt Model 및 Column 정보를 Neo4j에 적재 중...")
         for node_id, node_info in nodes.items():
-            # 모델(Model) 타입만 처리 (seed, snapshot 등도 포함 가능하지만 여기선 model에 집중)
             if node_info.get("resource_type") == "model":
                 model_name = node_info.get("name")
                 materialized = node_info.get("config", {}).get("materialized", "unknown")
@@ -42,7 +52,17 @@ def ingest_metadata(driver, manifest):
                 schema_name = node_info.get("schema", "default")
                 description = node_info.get("description", "")
 
-                # Model 노드 병합 생성
+                # 모델 계층 파싱 (예: models/01_bronze -> Bronze)
+                original_file_path = node_info.get("original_file_path", "")
+                layer = "unknown"
+                if "01_bronze" in original_file_path:
+                    layer = "Bronze"
+                elif "02_silver" in original_file_path:
+                    layer = "Silver"
+                elif "03_gold" in original_file_path:
+                    layer = "Gold"
+
+                # Model 노드 병합 생성 (layer 속성 추가)
                 model_query = """
                 MERGE (m:Model {unique_id: $unique_id})
                 SET m.name = $name,
@@ -50,7 +70,8 @@ def ingest_metadata(driver, manifest):
                     m.engine = $engine,
                     m.database = $database,
                     m.schema = $schema,
-                    m.description = $description
+                    m.description = $description,
+                    m.layer = $layer
                 """
                 session.execute_write(run_cypher, model_query, {
                     "unique_id": node_id,
@@ -59,14 +80,24 @@ def ingest_metadata(driver, manifest):
                     "engine": engine,
                     "database": db_name,
                     "schema": schema_name,
-                    "description": description
+                    "description": description,
+                    "layer": layer
                 })
 
-                # Column 노드 및 HAS_COLUMN 관계 생성
-                columns = node_info.get("columns", {})
+                # 계층(Layer) 라벨 동적 추가 (예: :Model:Bronze)
+                if layer != "unknown":
+                    session.execute_write(run_cypher, f"MATCH (m:Model {{unique_id: $unique_id}}) SET m:{layer}", {"unique_id": node_id})
+
+                # Column 정보 수집 (우선순위: catalog.json -> manifest.json)
+                columns = {}
+                if node_id in catalog_nodes:
+                    columns = catalog_nodes[node_id].get("columns", {})
+                if not columns:
+                    columns = node_info.get("columns", {})
+
                 for col_name, col_info in columns.items():
                     col_type = col_info.get("data_type") or col_info.get("type", "unknown")
-                    col_desc = col_info.get("description", "")
+                    col_desc = col_info.get("description", "") or col_info.get("comment", "")
                     
                     column_query = """
                     MERGE (c:Column {name: $col_name})
@@ -107,11 +138,16 @@ def ingest_metadata(driver, manifest):
                     "description": description
                 })
 
-                # Source Column 노드 및 HAS_COLUMN 관계 생성
-                columns = source_info.get("columns", {})
+                # Source Column 정보 수집
+                columns = {}
+                if source_id in catalog_sources:
+                    columns = catalog_sources[source_id].get("columns", {})
+                if not columns:
+                    columns = source_info.get("columns", {})
+
                 for col_name, col_info in columns.items():
                     col_type = col_info.get("data_type") or col_info.get("type", "unknown")
-                    col_desc = col_info.get("description", "")
+                    col_desc = col_info.get("description", "") or col_info.get("comment", "")
                     
                     column_query = """
                     MERGE (c:Column {name: $col_name})
@@ -164,6 +200,9 @@ def main():
         print(f"오류: {e}")
         return
 
+    print(f"1.1. catalog.json 로딩 중... ({CATALOG_PATH})")
+    catalog = load_catalog(CATALOG_PATH)
+
     print(f"2. Neo4j 데이터베이스 연결 중... ({NEO4J_URI})")
     try:
         driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
@@ -175,7 +214,7 @@ def main():
 
     try:
         clear_database(driver)
-        ingest_metadata(driver, manifest)
+        ingest_metadata(driver, manifest, catalog)
         print("🎉 dbt 메타데이터가 Neo4j에 성공적으로 로드되었습니다!")
     finally:
         driver.close()
