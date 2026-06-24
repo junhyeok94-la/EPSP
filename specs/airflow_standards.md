@@ -18,7 +18,18 @@
    - 모든 DAG 선언부(`@dag` 데코레이터)에는 시스템 분류를 명시하는 `tags` 파라미터를 필수로 작성해야 한다. (예: `tags=["ecommerce", "cdc", "clickhouse"]`)
 4. **TaskFlow API 및 데코레이터 우선 표준**
    - 전통적인 Operator 클래스를 명시적으로 선언하여 연결하는 방식(예: `PythonOperator`) 대신, 가독성과 데이터 흐름 추적이 용이한 `@dag`, `@task`, `@task_group` 데코레이터를 이용한 TaskFlow API 작성을 기본 원칙으로 한다.
-5. **Asset(구 Dataset) 기반 스케줄링 적용**
+5. **1 File = 1 DAG 원칙 및 파일명 일치 강제 (동적 바인딩 권장)**
+   - 유지보수성과 스케줄러 파싱 최적화를 위해, **하나의 파이썬 스크립트 파일(.py)에는 반드시 단 하나의 `@dag` 객체만 선언**한다.
+   - 선언된 DAG의 `dag_id`와 해당 스크립트의 파일명(확장자 제외)은 **반드시 1:1로 일치**해야 한다.
+   - 이를 강제하고 하드코딩 실수를 예방하기 위해, 파이썬의 `pathlib`을 이용하여 **파일명에서 `dag_id`를 동적으로 바인딩하여 선언하는 것을 표준으로 권장**한다.
+     - *동적 바인딩 예시*:
+       ```python
+       from pathlib import Path
+       DAG_ID = Path(__file__).stem  # 파일명 'dbt_silver_sales_pipeline.py' -> 'dbt_silver_sales_pipeline' 추출
+       
+       @dag(dag_id=DAG_ID, ...)
+       ```
+6. **Asset(구 Dataset) 기반 스케줄링 적용**
    - 2.x 버전에서 사용되던 `Dataset` 명칭은 3.x 버전부터 `Asset`으로 일괄 개편되었다.
    - 스케줄링 간 이벤트 기반 연쇄 흐름을 설계할 때는 `from airflow.sdk import Asset`을 선언하여 데이터 의존성 체인을 구성한다.
 
@@ -149,28 +160,59 @@ my_pipeline()
   * Airflow에서는 세분화된 디렉토리를 물리적으로 분리된 **독립적인 서브 DAG(또는 도메인 특화 DAG)**로 정의하여 개별 Cosmos `DbtTaskGroup`으로 감싸 렌더링 부하를 제어한다.
 * **Asset 기반의 이벤트 구동형(Event-driven) 의존성 설계 (강제 권장)**:
   * 서브 DAG 간 실행 흐름 제어 시, 상위 컨트롤 DAG에서 `TriggerDagRunOperator`를 통해 실행 순서를 강결합(`>>`)하는 구조를 탈피한다.
-  * 대신 **Airflow 3.x의 Asset(Dataset) 발행 및 구독 아키텍처**를 활용하여 데이터 업데이트 상태 변화에 맞춰 각 DAG가 연쇄 트리거되도록 구성한다.
-  * *Asset 기반 연쇄 스케줄링 예시*:
+  * 최상류의 수집 DAG만 Cron으로 구동하며, 후속 변환/마트 적재 DAG들은 이전 DAG가 생산한 `Asset`을 구독하고 완료 시 자신의 `Asset`을 생산하여 다음 DAG로 바톤을 넘기는 **도미노 연쇄 반응 체인(Domino Chain Reaction)** 구조를 표준으로 삼는다.
+  
+  ```text
+  [도미노 연쇄 반응 체인 표준 아키텍처]
+  
+  +--------------------------------------------------+
+  | Dag A (최상류 Ingestion)                          |
+  |  - Schedule: Cron (예: "*/15 * * * *")           |
+  |  - Task Output: outlets=[ASSET_A]                |
+  +------------------------+-------------------------+
+                           |
+                     (ASSET_A 발행)
+                           v
+  +--------------------------------------------------+
+  | Dag B (중간 변환 - Silver)                        |
+  |  - Schedule: [ASSET_A] (이벤트 구동)               |
+  |  - Task Output: outlets=[ASSET_B]                |
+  +------------------------+-------------------------+
+                           |
+                     (ASSET_B 발행)
+                           v
+  +--------------------------------------------------+
+  | Dag C (마트 생성 - Gold)                          |
+  |  - Schedule: [ASSET_B] (이벤트 구동)               |
+  |  - Task Output: outlets=[ASSET_C]                |
+  +--------------------------------------------------+
+  ```
+
+  * *Asset 기반 연쇄 스케줄링 예시 (2개의 독립된 파일로 분리 구현)*:
+
     ```python
+    # [파일 1] dags/dbt_silver_sales_pipeline.py
     from datetime import datetime
+    from pathlib import Path
     from airflow.sdk import dag, task, Asset
     from cosmos import DbtTaskGroup, ProjectConfig, ProfileConfig, RenderConfig
     from cosmos.selectors import Selector
 
-    # 1. 갱신 상태를 전달할 매개체(Asset) 정의
+    # 파일명을 동적으로 파싱하여 dag_id로 사용 (dbt_silver_sales_pipeline)
+    DAG_ID = Path(__file__).stem
+
+    # 1. 후행 DAG로 상태를 전달할 공통 Asset 정의 (또는 플러그인에서 임포트)
     SILVER_SALES_ASSET = Asset(uri="clickhouse://default/silver_sales_status_updated")
-    GOLD_MART_ASSET = Asset(uri="clickhouse://default/mart_daily_sales_wide")
 
     # 2. 선행 DAG (Silver 세부 도메인 갱신 후 Asset 발행)
     @dag(
-        dag_id="dbt_silver_sales_pipeline",
+        dag_id=DAG_ID,                       # 동적 파일명 바인딩 적용
         start_date=datetime(2026, 1, 1),
-        schedule="*/15 * * * *",
+        schedule="*/15 * * * *",             # 최상류만 Cron 실행
         catchup=False,
         tags=["dbt", "silver", "sales"]
     )
-    def silver_sales_dag():
-        # Cosmos DbtTaskGroup을 사용하여 sales 폴더만 렌더링
+    def run_dbt_silver_sales_pipeline():     # 함수명 중복 회피를 위해 접두사 추가
         sales_group = DbtTaskGroup(
             group_id="dbt_sales",
             project_config=ProjectConfig("/opt/airflow/dbt_clickhouse_dw"),
@@ -180,35 +222,47 @@ my_pipeline()
             )
         )
         
-        # dbt 완료 후 후속 상태 갱신을 의미하는 Asset 트리거
         @task(task_id="publish_sales_asset", outlets=[SILVER_SALES_ASSET])
         def trigger_asset():
             print("Sales models processing done. Publishing Asset updates.")
 
         sales_group >> trigger_asset()
 
-    silver_sales_dag()
+    run_dbt_silver_sales_pipeline()
+    ```
 
+    ```python
+    # [파일 2] dags/dbt_gold_sales_pipeline.py
+    from datetime import datetime
+    from pathlib import Path
+    from airflow.sdk import dag, Asset
+    from cosmos import DbtTaskGroup, ProjectConfig, ProfileConfig, RenderConfig
+    from cosmos.selectors import Selector
 
-    # 3. 후행 DAG (Asset을 구독하여 자동 구동)
+    # 파일명을 동적으로 파싱하여 dag_id로 사용 (dbt_gold_sales_pipeline)
+    DAG_ID = Path(__file__).stem
+
+    # 1. 선행 DAG에서 발행하는 동일한 Asset 정의
+    SILVER_SALES_ASSET = Asset(uri="clickhouse://default/silver_sales_status_updated")
+
+    # 2. 후행 DAG (Asset을 구독하여 자동 구동)
     @dag(
-        dag_id="dbt_gold_sales_pipeline",
+        dag_id=DAG_ID,                       # 동적 파일명 바인딩 적용
         start_date=datetime(2026, 1, 1),
-        schedule=[SILVER_SALES_ASSET],  # 앞선 DAG가 Asset을 발행하면 자동으로 트리거됨
+        schedule=[SILVER_SALES_ASSET],      # 시간 스케줄 없이 선행 Asset 변경 시 즉시 구동
         catchup=False,
         tags=["dbt", "gold", "sales"]
     )
-    def gold_sales_dag():
+    def run_dbt_gold_sales_pipeline():
         gold_group = DbtTaskGroup(
             group_id="dbt_gold",
             project_config=ProjectConfig("/opt/airflow/dbt_clickhouse_dw"),
             profile_config=ProfileConfig(...),
             render_config=RenderConfig(
-                # 정합성 유지를 위해 Modifier(+)를 추가하여 결합 실행
                 select=["+path:models/03_gold/sales"]
             )
         )
         
-    gold_sales_dag()
+    run_dbt_gold_sales_pipeline()
     ```
 
