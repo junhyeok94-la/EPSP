@@ -1,0 +1,43 @@
+# EPSP AI Agent System Rules (Ground Truth)
+# ==============================================================================
+# 이 파일은 AI 에이전트가 코드를 설계하고 구현할 때 준수해야 하는 최상위 제약조건 가이드입니다.
+# 작업을 시작하기 전에 반드시 아래 규칙과 각 도메인별 상세 스펙 파일을 참조하십시오.
+
+project_metadata:
+  name: EPSP (E-Commerce Pipeline with Segmented Platforms)
+  domain: Olist Kaggle E-Commerce Dataset
+  target_databases:
+    source: PostgreSQL 15+
+    dw_olap: ClickHouse (ReplacingMergeTree)
+    orchestration: Apache Airflow 3.2.2+ (Task SDK / AIP-72)
+    semantic_metadata: Neo4j Graph DB
+
+specification_paths:
+  master_architecture: "PROJECT_SPEC_AND_ARCHITECTURE.md"
+  ddl_contracts: "specs/ddl_contracts.md"
+  dbt_standards: "specs/dbt_standards.md"
+  airflow_standards: "specs/airflow_standards.md"
+  troubleshooting: "specs/troubleshooting.md"
+
+agent_constraints:
+  general:
+    - "작업 시작 전 specs/ 하위의 관련 상세 규격을 반드시 읽고 준수할 것."
+    - "호스트 IP(특히 Tailscale IP)는 코드에 하드코딩하지 말고 환경변수(${TAILSCALE_DESKTOP_IP})를 사용할 것."
+    - "API Key, Password 등 민감 정보는 절대 평문 노출하지 말 것."
+    
+  airflow:
+    - "임포트 시 반드시 Task SDK 표준 네임스페이스(from airflow.sdk import ...)를 사용할 것."
+    - "메타데이터 DB 직접 접근 금지. 콘텍스트 정보는 get_current_context()를 통해서만 조회할 것."
+    - "모든 @dag 선언부에는 tags 파라미터를 필수로 명시할 것."
+    - "의존성 정의 시 Dataset 대신 3.x 표준인 Asset을 사용할 것."
+    
+  dbt:
+    - "모든 모델 SQL 파일 최상단에 헤더 주석 템플릿(작성일, 작성자, 수정이력 등)을 강제 반영할 것."
+    - "코드 구조를 엄격히 지킬 것: [1] Header Comments -> [2] Hooks -> [3] Config -> [4] SQL Query."
+    - "ClickHouse 테이블 생성 시 ReplacingMergeTree(ts_ms) 엔진을 우선하며, order_by/partition_by 인덱스 전략을 명시할 것."
+    - "실제 DW 반영 전 dbt compile을 수행하여 Jinja 템플릿 및 의존성 오류(ref/source)를 선행 검증할 것."
+    
+  troubleshooting_keys:
+    - "rdkafka 연결 실패: external 포트인 9094 및 TAILSCALE_IP:9094를 사용할 것."
+    - "Kafka Connect ConfigException: 내부 offset/config 토픽의 cleanup.policy=compact로 변경할 것."
+    - "config.storage.topic 파티션 개수 에러: configs 토픽 삭제 후 partition 1개 규격으로 재생성할 것."
